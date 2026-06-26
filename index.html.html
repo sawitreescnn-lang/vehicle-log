@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>🚛 ระบบบันทึกเวลารถ</title>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:"Sarabun","Noto Sans Thai",sans-serif;background:#f0f4f8}::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#f1f5f9}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}</style>
+  <script>
+    firebase.initializeApp({apiKey:"AIzaSyCR8XtIApUXn7tE7KRAlneklMgo0YyBgIA",authDomain:"vehicle-log-ee4a3.firebaseapp.com",databaseURL:"https://vehicle-log-ee4a3-default-rtdb.firebaseio.com",projectId:"vehicle-log-ee4a3",storageBucket:"vehicle-log-ee4a3.firebasestorage.app",messagingSenderId:"996785485081",appId:"1:996785485081:web:f51706a7ac38c59a380188"});
+    window.__db = firebase.database();
+    window.useState = React.useState;
+    window.useEffect = React.useEffect;
+    window.useRef = React.useRef;
+    console.log("Firebase ready");
+  </script>
+</head>
+<body>
+  <div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;font-size:20px;color:#64748b">⏳ กำลังโหลด...</div></div>
+  <script>
+var __defProp = Object.defineProperty;
+var __defProps = Object.defineProperties;
+var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
+var __getOwnPropSymbols = Object.getOwnPropertySymbols;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __propIsEnum = Object.prototype.propertyIsEnumerable;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __spreadValues = (a, b) => {
+  for (var prop in b || (b = {}))
+    if (__hasOwnProp.call(b, prop))
+      __defNormalProp(a, prop, b[prop]);
+  if (__getOwnPropSymbols)
+    for (var prop of __getOwnPropSymbols(b)) {
+      if (__propIsEnum.call(b, prop))
+        __defNormalProp(a, prop, b[prop]);
+    }
+  return a;
+};
+var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
+const STORAGE_KEY = "vehicle_log_v4";
+const USER_KEY = "vehicle_log_user";
+const DOCKS_KEY = "vehicle_log_docks";
+const DEFAULT_DOCKS = ["A1", "A2", "B1", "B2", "C1", "C2"];
+const TRUCK_TYPES = ["4W","6W","10W","18W","22W","Backhold"];
+const RESERVATIONS_KEY = "vehicle_log_reservations";
+const CALL_LOG_KEY = "vehicle_log_calllog";
+const FIELD_LABELS = {
+  dock: "\u0E1B\u0E23\u0E30\u0E15\u0E39\u0E42\u0E2B\u0E25\u0E14",
+  plate: "\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19",
+  date: "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48",
+  timeIn: "\u0E40\u0E27\u0E25\u0E32\u0E40\u0E02\u0E49\u0E32",
+  timeStart: "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E42\u0E2B\u0E25\u0E14",
+  timeEnd: "\u0E42\u0E2B\u0E25\u0E14\u0E08\u0E1A",
+  timeOut: "\u0E40\u0E27\u0E25\u0E32\u0E2D\u0E2D\u0E01",
+  remark: "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38"
+};
+const nowTime = () => (/* @__PURE__ */ new Date()).toTimeString().slice(0, 5);
+const nowISO = () => (/* @__PURE__ */ new Date()).toISOString();
+const todayStr = () => (/* @__PURE__ */ new Date()).toLocaleDateString("th-TH");
+const todayFull = () => (/* @__PURE__ */ new Date()).toLocaleDateString("th-TH", { year: "numeric", month: "long", day: "numeric" });
+const defaultEntry = () => ({
+  id: null,
+  dock: "",
+  plate: "",
+  truckType: "",
+  date: todayStr(),
+  timeIn: "",
+  timeStart: "",
+  timeEnd: "",
+  timeOut: "",
+  remark: "",
+  createdBy: "",
+  createdAt: "",
+  editLog: []
+});
+function getStatus(e, reserved = false) {
+  if (!e && reserved) return { label: "\u0E08\u0E2D\u0E07", color: "#9333ea", bg: "#faf5ff", dot: "#c084fc" };
+  if (!e) return { label: "\u0E27\u0E48\u0E32\u0E07", color: "#16a34a", bg: "#f0fdf4", dot: "#22c55e" };
+  if (e.timeOut) return { label: "\u0E2D\u0E2D\u0E01\u0E41\u0E25\u0E49\u0E27", color: "#6b7280", bg: "#f3f4f6", dot: "#9ca3af" };
+  if (e.timeEnd) return { label: "\u0E42\u0E2B\u0E25\u0E14\u0E08\u0E1A", color: "#2563eb", bg: "#eff6ff", dot: "#60a5fa" };
+  if (e.timeStart) return { label: "\u0E01\u0E33\u0E25\u0E31\u0E07\u0E42\u0E2B\u0E25\u0E14", color: "#d97706", bg: "#fffbeb", dot: "#fbbf24" };
+  if (e.timeIn) return { label: "\u0E23\u0E16\u0E40\u0E02\u0E49\u0E32\u0E1B\u0E23\u0E30\u0E15\u0E39", color: "#15803d", bg: "#dcfce7", dot: "#4ade80" };
+  return { label: "\u0E23\u0E2D\u0E14\u0E33\u0E40\u0E19\u0E34\u0E19\u0E01\u0E32\u0E23", color: "#94a3b8", bg: "#f8fafc", dot: "#cbd5e1" };
+}
+function Badge({ label, color, bg }) {
+  return /* @__PURE__ */ React.createElement("span", { style: { background: bg, color, borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 700, border: `1px solid ${color}33`, whiteSpace: "nowrap" } }, label);
+}
+function TC({ value, color }) {
+  return /* @__PURE__ */ React.createElement("span", { style: { fontFamily: "monospace", fontWeight: 700, fontSize: 13, color: value ? color : "#d1d5db" } }, value || "--:--");
+}
+function StatCard({ icon, label, value, color }) {
+  return /* @__PURE__ */ React.createElement("div", { style: { background: "#fff", borderRadius: 12, padding: "14px 16px", flex: 1, minWidth: 100, boxShadow: "0 1px 8px rgba(0,0,0,.07)", border: "1px solid #e2e8f0" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 20 } }, icon), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 22, fontWeight: 800, color, marginTop: 4 } }, value), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: "#64748b", marginTop: 2 } }, label));
+}
+function EditHistory({ log }) {
+  const [open, setOpen] = useState(false);
+  if (!(log == null ? void 0 : log.length)) return /* @__PURE__ */ React.createElement("span", { style: { color: "#d1d5db", fontSize: 11 } }, "-");
+  const last = log[log.length - 1];
+  return /* @__PURE__ */ React.createElement("div", { style: { position: "relative", display: "inline-block" } }, /* @__PURE__ */ React.createElement("button", { onClick: () => setOpen((o) => !o), style: S.histBtn }, "\u{1F464} ", last.user, log.length > 1 && /* @__PURE__ */ React.createElement("span", { style: { marginLeft: 4, background: "#e0e7ff", color: "#4338ca", borderRadius: 10, padding: "0 5px", fontSize: 10 } }, "+", log.length - 1)), open && /* @__PURE__ */ React.createElement("div", { style: S.histDrop, onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 700, marginBottom: 8, color: "#1e293b", fontSize: 12, borderBottom: "1px solid #f1f5f9", paddingBottom: 6 } }, "\u{1F4CB} \u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E41\u0E01\u0E49\u0E44\u0E02"), [...log].reverse().map((l, i) => {
+    var _a;
+    return /* @__PURE__ */ React.createElement("div", { key: i, style: { marginBottom: 6, paddingBottom: 6, borderBottom: i < log.length - 1 ? "1px solid #f8fafc" : "none" } }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 700, color: "#4338ca", fontSize: 12 } }, "\u{1F464} ", l.user), /* @__PURE__ */ React.createElement("div", { style: { color: "#64748b", fontSize: 11 } }, new Date(l.at).toLocaleString("th-TH")), ((_a = l.fields) == null ? void 0 : _a.length) > 0 && /* @__PURE__ */ React.createElement("div", { style: { color: "#94a3b8", fontSize: 10, marginTop: 2 } }, "\u0E41\u0E01\u0E49\u0E44\u0E02: ", l.fields.join(", ")));
+  }), /* @__PURE__ */ React.createElement("button", { onClick: () => setOpen(false), style: __spreadProps(__spreadValues({}, S.btnCancel), { padding: "3px 10px", fontSize: 11, marginTop: 4 }) }, "\u0E1B\u0E34\u0E14")));
+}
+function QuickStamp({ entry, onStamp, user }) {
+  const next = !entry.timeIn ? "timeIn" : !entry.timeStart ? "timeStart" : !entry.timeEnd ? "timeEnd" : !entry.timeOut ? "timeOut" : null;
+  if (!next) return /* @__PURE__ */ React.createElement("span", { style: { color: "#d1d5db", fontSize: 11 } }, "\u2713 \u0E04\u0E23\u0E1A\u0E41\u0E25\u0E49\u0E27");
+  const cfg = { timeIn: ["#2563eb", "#eff6ff", "\u{1F535}", "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E40\u0E02\u0E49\u0E32"], timeStart: ["#d97706", "#fffbeb", "\u{1F7E1}", "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E42\u0E2B\u0E25\u0E14"], timeEnd: ["#16a34a", "#f0fdf4", "\u{1F7E2}", "\u0E42\u0E2B\u0E25\u0E14\u0E08\u0E1A"], timeOut: ["#6b7280", "#f3f4f6", "\u26AB", "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E2D\u0E2D\u0E01"] };
+  const [c, bg, ico, lbl] = cfg[next];
+  return /* @__PURE__ */ React.createElement("button", { onClick: () => onStamp(entry.id, next, user), style: { padding: "4px 10px", borderRadius: 6, border: `1.5px solid ${c}`, background: bg, color: c, cursor: "pointer", fontSize: 11, fontWeight: 700, fontFamily: "inherit", whiteSpace: "nowrap" } }, ico, " ", lbl);
+}
+function GateCard({ dock, activeEntry, reservation, onOpen, onCallIn, onCancelReserve, onEditReserve }) {
+  const isBusy = activeEntry && !activeEntry.timeOut;
+  const st = getStatus(activeEntry, !!reservation && !isBusy);
+  const isReserved = !isBusy && !!reservation;
+  const borderColor = isReserved ? "#9333ea" : isBusy ? st.color : "#e2e8f0";
+  return /* @__PURE__ */ React.createElement("div", { style: { background: "#fff", borderRadius: 14, border: `2px solid ${borderColor}`, padding: "14px 12px", boxShadow: isBusy || isReserved ? "0 4px 16px rgba(0,0,0,.1)" : "0 1px 6px rgba(0,0,0,.06)", transition: "transform .15s,box-shadow .15s", position: "relative", minHeight: 130 } }, /* @__PURE__ */ React.createElement("div", { style: { position: "absolute", top: 12, right: 12, width: 10, height: 10, borderRadius: "50%", background: st.dot, boxShadow: `0 0 0 3px ${st.dot}33` } }), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 20, fontWeight: 900, color: "#1e293b", letterSpacing: 0.5, cursor: "pointer" }, onClick: () => onOpen(dock, activeEntry) }, "\u{1F6AA} ", dock), /* @__PURE__ */ React.createElement("div", { style: { marginTop: 6 } }, /* @__PURE__ */ React.createElement(Badge, { label: st.label, color: st.color, bg: st.bg })), isReserved && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 8, background: "#faf5ff", borderRadius: 8, padding: "6px 8px", border: "1px solid #e9d5ff" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: "#7c3aed" } }, "\u{1F4DE} ", reservation.calledBy), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: "#6b7280", marginTop: 2 } }, "\u23F0 ", reservation.calledAt), reservation.note && /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: "#6b7280", marginTop: 1 } }, "\u{1F4DD} ", reservation.note), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 4, marginTop: 6 } }, /* @__PURE__ */ React.createElement("button", { onClick: (e) => {
+    e.stopPropagation();
+    onEditReserve(dock, reservation);
+  }, style: { flex: 1, padding: "3px 0", borderRadius: 5, border: "1px solid #9333ea", background: "#faf5ff", color: "#7c3aed", fontSize: 10, fontWeight: 700, cursor: "pointer" } }, "\u270F\uFE0F \u0E41\u0E01\u0E49\u0E44\u0E02"), /* @__PURE__ */ React.createElement("button", { onClick: (e) => {
+    e.stopPropagation();
+    onCancelReserve(dock);
+  }, style: { flex: 1, padding: "3px 0", borderRadius: 5, border: "1px solid #fca5a5", background: "#fff1f1", color: "#dc2626", fontSize: 10, fontWeight: 700, cursor: "pointer" } }, "\u2715 \u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"))), isBusy && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 8, cursor: "pointer" }, onClick: () => onOpen(dock, activeEntry) }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 800, fontSize: 14, color: "#1e293b" } }, activeEntry.plate), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: "#64748b", marginTop: 3, display: "flex", gap: 8, flexWrap: "wrap" } }, activeEntry.timeIn && /* @__PURE__ */ React.createElement("span", null, "\u{1F535} ", activeEntry.timeIn), activeEntry.timeStart && /* @__PURE__ */ React.createElement("span", null, "\u{1F7E1} ", activeEntry.timeStart), activeEntry.timeEnd && /* @__PURE__ */ React.createElement("span", null, "\u{1F7E2} ", activeEntry.timeEnd))), !isBusy && !isReserved && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 10, display: "flex", flexDirection: "column", gap: 6 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: "#94a3b8", cursor: "pointer" }, onClick: () => onOpen(dock, activeEntry) }, "\u0E01\u0E14\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E16\u0E40\u0E02\u0E49\u0E32"), /* @__PURE__ */ React.createElement("button", { onClick: (e) => {
+    e.stopPropagation();
+    onCallIn(dock);
+  }, style: { padding: "5px 0", borderRadius: 7, border: "1.5px solid #9333ea", background: "#faf5ff", color: "#7c3aed", fontSize: 11, fontWeight: 700, cursor: "pointer" } }, "\u{1F4DE} \u0E40\u0E23\u0E35\u0E22\u0E01\u0E23\u0E16\u0E40\u0E02\u0E49\u0E32")));
+}
+function EntryModal({ form, setForm, editId, username, onSubmit, onClose }) {
+  var _a;
+  const stampNow = (f) => setForm((p) => __spreadProps(__spreadValues({}, p), { [f]: nowTime() }));
+  const handleChange = (f, v) => setForm((p) => __spreadProps(__spreadValues({}, p), { [f]: v }));
+  const TF = ({ label, field, value }) => /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("label", { style: S.label }, label), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 6, marginBottom: 10 } }, /* @__PURE__ */ React.createElement("input", { type: "time", value, onChange: (e) => handleChange(field, e.target.value), style: __spreadProps(__spreadValues({}, S.input), { flex: 1, marginBottom: 0 }) }), /* @__PURE__ */ React.createElement("button", { onClick: () => stampNow(field), style: S.stampBtn }, "\u23F1 \u0E15\u0E2D\u0E19\u0E19\u0E35\u0E49")));
+  return /* @__PURE__ */ React.createElement("div", { style: S.overlay, onClick: onClose }, /* @__PURE__ */ React.createElement("div", { style: __spreadProps(__spreadValues({}, S.modal), { width: "min(96vw,560px)", maxHeight: "90vh", overflowY: "auto" }), onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 800, fontSize: 16, color: "#1e293b", marginBottom: 14 } }, editId ? "\u270F\uFE0F \u0E41\u0E01\u0E49\u0E44\u0E02\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23" : "\u2795 \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E43\u0E2B\u0E21\u0E48", form.dock && /* @__PURE__ */ React.createElement("span", { style: { marginLeft: 8, fontWeight: 400, color: "#7c3aed", fontSize: 14 } }, "\u0E1B\u0E23\u0E30\u0E15\u0E39 ", form.dock)), /* @__PURE__ */ React.createElement("div", { style: S.grid }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("label", { style: S.label }, "\u{1F6AA} \u0E1B\u0E23\u0E30\u0E15\u0E39\u0E42\u0E2B\u0E25\u0E14\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32"), /* @__PURE__ */ React.createElement("input", { type: "text", value: form.dock, onChange: (e) => handleChange("dock", e.target.value.toUpperCase()), placeholder: "\u0E40\u0E0A\u0E48\u0E19 A1, Dock 3", style: __spreadProps(__spreadValues({}, S.input), { fontWeight: 700, color: "#7c3aed" }) })), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("label", { style: S.label }, "\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E23\u0E16 *"), /* @__PURE__ */ React.createElement("input", { type: "text", value: form.plate, onChange: (e) => handleChange("plate", e.target.value.toUpperCase())), placeholder: "\u0E40\u0E0A\u0E48\u0E19 \u0E01\u0E02 1234 \u0E01\u0E23\u0E38\u0E07\u0E40\u0E17\u0E1E", style: __spreadProps(__spreadValues({}, S.input), { fontWeight: 700 }) }), /* @__PURE__ */ React.createElement("div",null,/* @__PURE__ */ React.createElement("label",{style:S.label},"Truck Type"),/* @__PURE__ */ React.createElement("select",{value:form.truckType||"",onChange:function(e){return handleChange("truckType",e.target.value);},style:Object.assign({},S.input,{fontWeight:700})},/* @__PURE__ */ React.createElement("option",{value:""},"-- เลือกประเภทรถ --"),TRUCK_TYPES.map(function(t){return /* @__PURE__ */ React.createElement("option",{key:t,value:t},t);})))), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("label", { style: S.label }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48"), /* @__PURE__ */ React.createElement("input", { type: "text", value: form.date, onChange: (e) => handleChange("date", e.target.value), style: S.input })), /* @__PURE__ */ React.createElement(TF, { label: "\u{1F535} \u0E40\u0E27\u0E25\u0E32\u0E40\u0E02\u0E49\u0E32\u0E1B\u0E23\u0E30\u0E15\u0E39", field: "timeIn", value: form.timeIn }), /* @__PURE__ */ React.createElement(TF, { label: "\u{1F7E1} \u0E40\u0E27\u0E25\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21\u0E42\u0E2B\u0E25\u0E14", field: "timeStart", value: form.timeStart }), /* @__PURE__ */ React.createElement(TF, { label: "\u{1F7E2} \u0E40\u0E27\u0E25\u0E32\u0E42\u0E2B\u0E25\u0E14\u0E08\u0E1A", field: "timeEnd", value: form.timeEnd }), /* @__PURE__ */ React.createElement(TF, { label: "\u26AB \u0E40\u0E27\u0E25\u0E32\u0E2D\u0E2D\u0E01\u0E1B\u0E23\u0E30\u0E15\u0E39", field: "timeOut", value: form.timeOut })), /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 12 } }, /* @__PURE__ */ React.createElement("label", { style: S.label }, "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38"), /* @__PURE__ */ React.createElement("textarea", { value: form.remark, onChange: (e) => handleChange("remark", e.target.value), placeholder: "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E40\u0E15\u0E34\u0E21 \u0E40\u0E0A\u0E48\u0E19 \u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32, \u0E0A\u0E37\u0E48\u0E2D\u0E04\u0E19\u0E02\u0E31\u0E1A, \u0E1B\u0E31\u0E0D\u0E2B\u0E32...", rows: 2, style: __spreadProps(__spreadValues({}, S.input), { resize: "vertical", marginBottom: 0 }) })), /* @__PURE__ */ React.createElement("div", { style: { background: "#f8fafc", borderRadius: 8, padding: "7px 12px", marginBottom: 14, fontSize: 12, color: "#64748b" } }, "\u{1F464} \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E43\u0E19\u0E19\u0E32\u0E21: ", /* @__PURE__ */ React.createElement("strong", { style: { color: "#4338ca" } }, username), editId && ((_a = form.editLog) == null ? void 0 : _a.length) > 0 && /* @__PURE__ */ React.createElement("span", { style: { marginLeft: 10 } }, "\xB7 \u0E41\u0E01\u0E49\u0E44\u0E02\u0E41\u0E25\u0E49\u0E27 ", form.editLog.length, " \u0E04\u0E23\u0E31\u0E49\u0E07")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end" } }, /* @__PURE__ */ React.createElement("button", { onClick: onClose, style: S.btnCancel }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"), /* @__PURE__ */ React.createElement("button", { onClick: onSubmit, style: S.btnPrimary }, editId ? "\u{1F4BE} \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E01\u0E32\u0E23\u0E41\u0E01\u0E49\u0E44\u0E02" : "\u2705 \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23"))));
+}
+function App() {
+  const [entries, setEntries] = useState([]);
+  const [docks, setDocks] = useState(DEFAULT_DOCKS);
+  const [username, setUsername] = useState("");
+  const [userInput, setUserInput] = useState("");
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [form, setForm] = useState(defaultEntry());
+  const [editId, setEditId] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [tab, setTab] = useState("gate");
+  const [search, setSearch] = useState("");
+  const [filterDate, setFilterDate] = useState("");
+  const [toast, setToast] = useState("");
+  const [confirmDel, setConfirmDel] = useState(null);
+  const [showDockMgr, setShowDockMgr] = useState(false);
+  const [newDockName, setNewDockName] = useState("");
+  const [kpiUser, setKpiUser] = useState(null);
+  const [dashDate, setDashDate] = useState(todayStr());
+  const [showImport, setShowImport] = useState(false);
+  const [importRows, setImportRows] = useState([]);
+  const [importError, setImportError] = useState("");
+  const [importMode, setImportMode] = useState("append");
+  const fileInputRef = useRef();
+  const [alerts, setAlerts] = useState([]);
+  const [showAlertPanel, setShowAlertPanel] = useState(false);
+  const [alertSettings, setAlertSettings] = useState({
+    // เปิด/ปิดแต่ละเงื่อนไข
+    enableWait: true,
+    // รอเริ่มโหลดนานเกิน
+    enableLoad: true,
+    // โหลดนานเกินกำหนด
+    enableStay: true,
+    // โหลดจบแล้วยังไม่ออก
+    enableOvernight: true,
+    // รถค้างข้ามวัน
+    // ค่าเวลาแต่ละเงื่อนไข
+    maxWait: 30,
+    // นาที
+    maxLoad: 60,
+    // นาที
+    maxStay: 30,
+    // นาที
+    // ความถี่แจ้งเตือนซ้ำ
+    intervalWait: 30,
+    // ทุก X นาที
+    intervalLoad: 60,
+    // ทุก X นาที
+    intervalStay: 60,
+    // ทุก X นาที
+    // ช่องทาง
+    inApp: true,
+    // แจ้งในแอป
+    browser: true
+    // Browser notification
+  });
+  const [showAlertSettings, setShowAlertSettings] = useState(false);
+  const alertedRef = useRef(/* @__PURE__ */ new Set());
+  const [dismissAlertId, setDismissAlertId] = useState(null);
+  const [reservations, setReservations] = useState({});
+  const [callLog, setCallLog] = useState([]);
+  const [showCallPopup, setShowCallPopup] = useState(null);
+  const [showCallIn, setShowCallIn] = useState(null);
+  const [callNote, setCallNote] = useState("");
+  const [editReserve, setEditReserve] = useState(null);
+  const [showCallLog, setShowCallLog] = useState(false);
+  const [totalCallCount, setTotalCallCount] = useState(0);
+  const lastReadRef = useRef(parseInt(localStorage.getItem("lastReadCallCount") || "0"));
+  const unreadCallCount = Math.max(0, totalCallCount - lastReadRef.current);
+  const [selectedCallIds, setSelectedCallIds] = useState(/* @__PURE__ */ new Set());
+  const [fbReady, setFbReady] = useState(false);
+  const [onlineUsers, setOnlineUsers] = useState({});
+  const docksInitialized = useRef(false);
+  useEffect(() => {
+    const u = localStorage.getItem(USER_KEY);
+    if (u) setUsername(u); else setShowUserModal(true);
+    const initFB = () => {
+      const db = window.__db;
+      if (!db) { setTimeout(initFB, 300); return; }
+      setFbReady(true);
+      db.ref("entries").on("value", function(snap) {
+        const val = snap.val();
+        if (val) {
+          const arr = Object.keys(val).map(function(k) { return Object.assign({}, val[k], {_fbKey: k}); });
+          arr.sort(function(a, b) { return (b.createdAt||"").localeCompare(a.createdAt||""); });
+          setEntries(arr);
+        } else setEntries([]);
+      });
+      db.ref("docks").on("value", function(snap) {
+        if (snap.val()) { setDocks(snap.val()); }
+        docksInitialized.current = true;
+      });
+      db.ref("reservations").on("value", function(snap) { setReservations(snap.val() || {}); });
+      db.ref("callLog").on("value", function(snap) {
+        const val = snap.val();
+        if (val) {
+          const arr = Object.keys(val).map(function(k) { return Object.assign({}, val[k], {_fbKey: k}); });
+          arr.sort(function(a, b) { return (b.id||0) - (a.id||0); });
+          setCallLog(arr);
+          setTotalCallCount(arr.length);
+        } else { setCallLog([]); setTotalCallCount(0); }
+      });
+      db.ref("online").on("value", function(snap) { setOnlineUsers(snap.val() || {}); });
+    };
+    initFB();
+    return function() {
+      const db = window.__db;
+      if (db) ["entries","docks","reservations","callLog","online"].forEach(function(p) { db.ref(p).off(); });
+    };
+  }, []);
+  useEffect(() => {
+    if (!fbReady || !window.__db || !docksInitialized.current) return;
+    window.__db.ref("docks").set(docks);
+  }, [docks, fbReady]);
+  useEffect(() => {
+    if (!username || !fbReady || !window.__db) return;
+    const db = window.__db;
+    const key = username.replace(/[.#$[\]]/g, "_");
+    const presRef = db.ref("online/" + key);
+    presRef.set({name: username, at: new Date().toLocaleTimeString("th-TH", {hour:"2-digit", minute:"2-digit"})});
+    presRef.onDisconnect().remove();
+    return function() { presRef.remove(); };
+  }, [username, fbReady]);
+  useEffect(() => {
+    if (toast) {
+      const t = setTimeout(() => setToast(""), 2500);
+      return () => clearTimeout(t);
+    }
+  }, [toast]);
+  const handleCallIn = (dock) => {
+    if (!username) {
+      setShowUserModal(true);
+      return;
+    }
+    setShowCallIn(dock);
+    setCallNote("");
+  };
+  const confirmCallIn = (dock, note) => {
+    const at = new Date().toLocaleTimeString("th-TH", {hour:"2-digit",minute:"2-digit"});
+    const id = Date.now();
+    const res = {id:id, dock:dock, calledBy:username, calledAt:at, note:note};
+    const db = window.__db;
+    if (db) {
+      db.ref("reservations/" + dock).set(res);
+      db.ref("callLog").push(Object.assign({}, res, {status:"จอง", cancelledAt:null}));
+    }
+    setTotalCallCount(function(prev) { return prev + 1; });
+    setShowCallPopup(res);
+    setTimeout(function() { setShowCallPopup(null); }, 6000);
+    if ("Notification" in window && Notification.permission === "granted") {
+      try { new Notification("เรียกรถเข้า!", {body:username+" เรียกรถเข้าประตู "+dock}); } catch(e2) {}
+    }
+    setShowCallIn(null); setCallNote("");
+  };
+  const cancelReservation = (dock) => {
+    const db = window.__db;
+    const c = new Date().toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit"});
+    if (db) {
+      db.ref("reservations/" + dock).remove();
+      callLog.filter(function(l){return l.dock===dock&&l.status==="จอง"&&l._fbKey;})
+        .forEach(function(l){db.ref("callLog/"+l._fbKey).update({status:"ยกเลิก",cancelledAt:c});});
+    }
+    msg("ยกเลิกการจองประตู " + dock);
+  };
+  const saveEditReserve = () => {
+    if (!editReserve) return;
+    const dock = editReserve.dock, reservation = editReserve.reservation;
+    const updated = Object.assign({}, reservation, {note: callNote});
+    delete updated._fbKey;
+    const db = window.__db;
+    if (db) {
+      db.ref("reservations/" + dock).set(updated);
+      const l = callLog.find(function(x){return x.id===reservation.id;});
+      if (l && l._fbKey) db.ref("callLog/"+l._fbKey).update({note:callNote});
+    }
+    setEditReserve(null); setCallNote(""); msg("แก้ไขการจองแล้ว");
+  };
+  const handleLogout = () => {
+    setUsername("");
+    setUserInput("");
+    localStorage.removeItem(USER_KEY);
+    setShowUserModal(true);
+    msg("\u{1F44B} \u0E2D\u0E2D\u0E01\u0E08\u0E32\u0E01\u0E23\u0E30\u0E1A\u0E1A\u0E41\u0E25\u0E49\u0E27");
+  };
+  const getActiveForDock = (dock) => entries.find((e) => e.dock === dock && e.timeIn && !e.timeOut) || null;
+  const openFromGate = (dock, activeEntry) => {
+    if (!username) {
+      setShowUserModal(true);
+      return;
+    }
+    if (activeEntry) {
+      setForm(__spreadValues({}, activeEntry));
+      setEditId(activeEntry.id);
+    } else {
+      setForm(__spreadProps(__spreadValues({}, defaultEntry()), { dock, createdBy: username, createdAt: nowISO(), timeIn: nowTime() }));
+      setEditId(null);
+    }
+    setShowForm(true);
+  };
+  const openNew = () => {
+    if (!username) {
+      setShowUserModal(true);
+      return;
+    }
+    setForm(__spreadProps(__spreadValues({}, defaultEntry()), { createdBy: username, createdAt: nowISO() }));
+    setEditId(null);
+    setShowForm(true);
+  };
+  const openEdit = (entry, alertId = null) => {
+    if (!username) {
+      setShowUserModal(true);
+      return;
+    }
+    setForm(__spreadValues({}, entry));
+    setEditId(entry.id);
+    setShowForm(true);
+    if (alertId) setDismissAlertId(alertId);
+  };
+  const closeForm = () => {
+    setShowForm(false);
+    setEditId(null);
+    if (dismissAlertId) {
+      setAlerts((prev) => prev.filter((a) => a.id !== dismissAlertId));
+      setDismissAlertId(null);
+    }
+  };
+  const handleSubmit = () => {
+    if (!form.plate.trim()) { msg("กรุณากรอกทะเบียนรถ"); return; }
+    const db = window.__db;
+    if (!db) { msg("Firebase ยังไม่พร้อม"); return; }
+    const at = nowISO();
+    if (editId !== null) {
+      const entry = entries.find(function(e) { return e.id === editId; });
+      const changed = Object.keys(FIELD_LABELS).filter(function(k) { return form[k] !== (entry||{})[k]; }).map(function(k) { return FIELD_LABELS[k]; });
+      const eLog = entry && entry.editLog ? entry.editLog : [];
+      const updated = Object.assign({}, form, {id: editId, editLog: eLog.concat([{user: username, at: at, fields: changed}])});
+      delete updated._fbKey;
+      if (entry && entry._fbKey) db.ref("entries/" + entry._fbKey).set(updated);
+      msg("แก้ไขข้อมูลสำเร็จ");
+    } else {
+      const ne = Object.assign({}, form, {id: Date.now(), createdBy: username, createdAt: at, editLog: [{user: username, at: at, fields: ["สร้างรายการ"]}]});
+      delete ne._fbKey;
+      db.ref("entries").push(ne);
+      msg("บันทึกรายการสำเร็จ");
+    }
+    setForm(defaultEntry()); closeForm();
+  };
+  const handleQuickStamp = (id, field, user) => {
+    if (!user) { msg("กรุณาตั้งชื่อผู้ใช้ก่อน"); setShowUserModal(true); return; }
+    const db = window.__db; if (!db) return;
+    const t = nowTime(), at = nowISO();
+    const entry = entries.find(function(e) { return e.id === id; });
+    if (!entry || !entry._fbKey) return;
+    const eLog = entry.editLog ? entry.editLog : [];
+    const upd = {};
+    upd[field] = t;
+    upd.editLog = eLog.concat([{user: user, at: at, fields: [FIELD_LABELS[field]]}]);
+    db.ref("entries/" + entry._fbKey).update(upd);
+    msg("บันทึก " + FIELD_LABELS[field] + " " + t);
+  };
+  const doDelete = () => {
+    if (!confirmDel) return;
+    const db = window.__db; if (!db) return;
+    if (confirmDel === "all") {
+      db.ref("entries").remove(); msg("ลบข้อมูลทั้งหมดแล้ว");
+    } else if (typeof confirmDel === "string" && confirmDel.startsWith("date:")) {
+      const d = confirmDel.replace("date:", "");
+      entries.filter(function(e) { return e.date === d && e._fbKey; }).forEach(function(e) { db.ref("entries/" + e._fbKey).remove(); });
+      msg("ลบข้อมูลวัน " + d);
+    } else {
+      const entry = entries.find(function(e) { return e.id === confirmDel; });
+      if (entry && entry._fbKey) db.ref("entries/" + entry._fbKey).remove();
+      msg("ลบรายการแล้ว");
+    }
+    setConfirmDel(null);
+  };
+  const exportExcel = () => {
+    const rows = filtered.map((e) => {
+      var _a, _b, _c;
+      const last = ((_a = e.editLog) == null ? void 0 : _a.length) ? e.editLog[e.editLog.length - 1].user : e.createdBy || "";
+      const all = ((_b = e.editLog) == null ? void 0 : _b.map((l) => {
+        var _a2;
+        return `${l.user} (${new Date(l.at).toLocaleString("th-TH")}): ${((_a2 = l.fields) == null ? void 0 : _a2.join(",")) || ""}`;
+      }).join(" | ")) || "";
+      return {
+        "\u0E1B\u0E23\u0E30\u0E15\u0E39\u0E42\u0E2B\u0E25\u0E14": e.dock || "",
+        "\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E23\u0E16": e.plate || "", "Truck Type": e.truckType || "",
+        "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48": e.date || "",
+        "\u0E40\u0E27\u0E25\u0E32\u0E40\u0E02\u0E49\u0E32\u0E1B\u0E23\u0E30\u0E15\u0E39": e.timeIn || "",
+        "\u0E40\u0E27\u0E25\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21\u0E42\u0E2B\u0E25\u0E14": e.timeStart || "",
+        "\u0E40\u0E27\u0E25\u0E32\u0E42\u0E2B\u0E25\u0E14\u0E08\u0E1A": e.timeEnd || "",
+        "\u0E40\u0E27\u0E25\u0E32\u0E2D\u0E2D\u0E01\u0E1B\u0E23\u0E30\u0E15\u0E39": e.timeOut || "",
+        "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38": e.remark || "",
+        "\u0E1C\u0E39\u0E49\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14": last,
+        "\u0E08\u0E33\u0E19\u0E27\u0E19\u0E04\u0E23\u0E31\u0E49\u0E07\u0E41\u0E01\u0E49\u0E44\u0E02": ((_c = e.editLog) == null ? void 0 : _c.length) || 0,
+        "\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E01\u0E32\u0E23\u0E41\u0E01\u0E49\u0E44\u0E02": all
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [12, 18, 14, 14, 14, 14, 14, 24, 16, 10, 50].map((w) => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Vehicle Log");
+    XLSX.writeFile(wb, `vehicle-log-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.xlsx`);
+    msg("\u{1F4CA} \u0E14\u0E32\u0E27\u0E19\u0E4C\u0E42\u0E2B\u0E25\u0E14 Excel \u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08");
+  };
+  const downloadTemplate = () => {
+    const templateRows = [
+      { "\u0E1B\u0E23\u0E30\u0E15\u0E39\u0E42\u0E2B\u0E25\u0E14": "A1", "\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E23\u0E16": "\u0E01\u0E02 1234 \u0E01\u0E23\u0E38\u0E07\u0E40\u0E17\u0E1E", "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48": todayStr(), "\u0E40\u0E27\u0E25\u0E32\u0E40\u0E02\u0E49\u0E32\u0E1B\u0E23\u0E30\u0E15\u0E39": "08:00", "\u0E40\u0E27\u0E25\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21\u0E42\u0E2B\u0E25\u0E14": "08:15", "\u0E40\u0E27\u0E25\u0E32\u0E42\u0E2B\u0E25\u0E14\u0E08\u0E1A": "09:00", "\u0E40\u0E27\u0E25\u0E32\u0E2D\u0E2D\u0E01\u0E1B\u0E23\u0E30\u0E15\u0E39": "09:10", "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38": "\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25" },
+      { "\u0E1B\u0E23\u0E30\u0E15\u0E39\u0E42\u0E2B\u0E25\u0E14": "B2", "\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E23\u0E16": "\u0E07\u0E08 5678 \u0E40\u0E0A\u0E35\u0E22\u0E07\u0E43\u0E2B\u0E21\u0E48", "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48": todayStr(), "\u0E40\u0E27\u0E25\u0E32\u0E40\u0E02\u0E49\u0E32\u0E1B\u0E23\u0E30\u0E15\u0E39": "09:30", "\u0E40\u0E27\u0E25\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21\u0E42\u0E2B\u0E25\u0E14": "", "\u0E40\u0E27\u0E25\u0E32\u0E42\u0E2B\u0E25\u0E14\u0E08\u0E1A": "", "\u0E40\u0E27\u0E25\u0E32\u0E2D\u0E2D\u0E01\u0E1B\u0E23\u0E30\u0E15\u0E39": "", "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38": "" }
+    ];
+    const ws = XLSX.utils.json_to_sheet(templateRows);
+    ws["!cols"] = [12, 20, 14, 14, 14, 14, 14, 24].map((w) => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template");
+    const instructions = [
+      { "\u0E04\u0E33\u0E2D\u0E18\u0E34\u0E1A\u0E32\u0E22": "\u0E27\u0E34\u0E18\u0E35\u0E01\u0E23\u0E2D\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25" },
+      { "\u0E04\u0E33\u0E2D\u0E18\u0E34\u0E1A\u0E32\u0E22": "1. \u0E1B\u0E23\u0E30\u0E15\u0E39\u0E42\u0E2B\u0E25\u0E14: \u0E0A\u0E37\u0E48\u0E2D\u0E1B\u0E23\u0E30\u0E15\u0E39 \u0E40\u0E0A\u0E48\u0E19 A1, B2, Dock 3" },
+      { "\u0E04\u0E33\u0E2D\u0E18\u0E34\u0E1A\u0E32\u0E22": "2. \u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E23\u0E16: \u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E23\u0E16 (\u0E08\u0E33\u0E40\u0E1B\u0E47\u0E19)" },
+      { "\u0E04\u0E33\u0E2D\u0E18\u0E34\u0E1A\u0E32\u0E22": "3. \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48: \u0E23\u0E39\u0E1B\u0E41\u0E1A\u0E1A dd/mm/yyyy \u0E2B\u0E23\u0E37\u0E2D \u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E15\u0E32\u0E21\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07" },
+      { "\u0E04\u0E33\u0E2D\u0E18\u0E34\u0E1A\u0E32\u0E22": "4. \u0E40\u0E27\u0E25\u0E32\u0E15\u0E48\u0E32\u0E07\u0E46: \u0E23\u0E39\u0E1B\u0E41\u0E1A\u0E1A HH:MM \u0E40\u0E0A\u0E48\u0E19 08:30 (\u0E16\u0E49\u0E32\u0E44\u0E21\u0E48\u0E21\u0E35\u0E43\u0E2B\u0E49\u0E40\u0E27\u0E49\u0E19\u0E27\u0E48\u0E32\u0E07)" },
+      { "\u0E04\u0E33\u0E2D\u0E18\u0E34\u0E1A\u0E32\u0E22": "5. \u0E25\u0E1A\u0E41\u0E16\u0E27\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07 2 \u0E41\u0E16\u0E27\u0E2D\u0E2D\u0E01 \u0E41\u0E25\u0E49\u0E27\u0E01\u0E23\u0E2D\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E23\u0E34\u0E07\u0E41\u0E17\u0E19" },
+      { "\u0E04\u0E33\u0E2D\u0E18\u0E34\u0E1A\u0E32\u0E22": "6. \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E1F\u0E25\u0E4C\u0E40\u0E1B\u0E47\u0E19 .xlsx \u0E41\u0E25\u0E49\u0E27\u0E2D\u0E31\u0E1E\u0E42\u0E2B\u0E25\u0E14\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A" }
+    ];
+    const ws2 = XLSX.utils.json_to_sheet(instructions);
+    ws2["!cols"] = [{ wch: 60 }];
+    XLSX.utils.book_append_sheet(wb, ws2, "\u0E04\u0E33\u0E2D\u0E18\u0E34\u0E1A\u0E32\u0E22");
+    XLSX.writeFile(wb, "vehicle-log-template.xlsx");
+    msg("\u{1F4E5} \u0E14\u0E32\u0E27\u0E19\u0E4C\u0E42\u0E2B\u0E25\u0E14 Template \u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08");
+  };
+  const handleImportFile = (file) => {
+    if (!file) return;
+    setImportError("");
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = new Uint8Array(ev.target.result);
+        const wb = XLSX.read(data, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+        if (!rows.length) {
+          setImportError("\u0E44\u0E1F\u0E25\u0E4C\u0E44\u0E21\u0E48\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07");
+          return;
+        }
+        const required = ["\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E23\u0E16"];
+        const cols = Object.keys(rows[0]);
+        const missing = required.filter((r) => !cols.includes(r));
+        if (missing.length) {
+          setImportError(`\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E04\u0E2D\u0E25\u0E31\u0E21\u0E19\u0E4C: ${missing.join(", ")} \u2014 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E43\u0E0A\u0E49 Template \u0E17\u0E35\u0E48\u0E14\u0E32\u0E27\u0E19\u0E4C\u0E42\u0E2B\u0E25\u0E14`);
+          return;
+        }
+        const mapped = rows.map((r) => ({
+          id: Date.now() + Math.random(),
+          dock: (r["\u0E1B\u0E23\u0E30\u0E15\u0E39\u0E42\u0E2B\u0E25\u0E14"] || "").toString().trim().toUpperCase(),
+          plate: (r["\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E23\u0E16"] || "").toString().trim().toUpperCase(),
+          date: (r["\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48"] || todayStr()).toString().trim() || todayStr(),
+          timeIn: (r["\u0E40\u0E27\u0E25\u0E32\u0E40\u0E02\u0E49\u0E32\u0E1B\u0E23\u0E30\u0E15\u0E39"] || "").toString().trim(),
+          timeStart: (r["\u0E40\u0E27\u0E25\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21\u0E42\u0E2B\u0E25\u0E14"] || "").toString().trim(),
+          timeEnd: (r["\u0E40\u0E27\u0E25\u0E32\u0E42\u0E2B\u0E25\u0E14\u0E08\u0E1A"] || "").toString().trim(),
+          timeOut: (r["\u0E40\u0E27\u0E25\u0E32\u0E2D\u0E2D\u0E01\u0E1B\u0E23\u0E30\u0E15\u0E39"] || "").toString().trim(),
+          remark: (r["\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38"] || "").toString().trim(),
+          createdBy: username || "\u0E19\u0E33\u0E40\u0E02\u0E49\u0E32\u0E08\u0E32\u0E01 Excel",
+          createdAt: nowISO(),
+          editLog: [{ user: username || "\u0E19\u0E33\u0E40\u0E02\u0E49\u0E32\u0E08\u0E32\u0E01 Excel", at: nowISO(), fields: ["\u0E19\u0E33\u0E40\u0E02\u0E49\u0E32\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25"] }]
+        })).filter((e) => e.plate);
+        if (!mapped.length) {
+          setImportError("\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E21\u0E35\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E23\u0E16 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A");
+          return;
+        }
+        setImportRows(mapped);
+      } catch (err) {
+        setImportError("\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E1F\u0E25\u0E4C\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E43\u0E0A\u0E49\u0E44\u0E1F\u0E25\u0E4C .xlsx \u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19");
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+  const confirmImport = () => {
+    if (!importRows.length) return;
+    const db = window.__db;
+    if (db) {
+      if (importMode === "replace") db.ref("entries").remove();
+      importRows.forEach(function(r) { const c = Object.assign({}, r); delete c._fbKey; db.ref("entries").push(c); });
+    }
+    msg("นำเข้าสำเร็จ " + importRows.length + " รายการ");
+    setShowImport(false); setImportRows([]); setImportError("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+  const calcDuration = (start, end) => {
+    if (!start || !end) return null;
+    const [sh, sm] = start.split(":").map(Number);
+    const [eh, em] = end.split(":").map(Number);
+    const diff = eh * 60 + em - (sh * 60 + sm);
+    return diff >= 0 ? diff : null;
+  };
+  const fmtMin = (m) => m == null ? "-" : m < 60 ? `${m} \u0E19\u0E32\u0E17\u0E35` : `${Math.floor(m / 60)} \u0E0A\u0E21. ${m % 60} \u0E19\u0E32\u0E17\u0E35`;
+  const allUsers = [...new Set(
+    entries.flatMap((e) => (e.editLog || []).map((l) => l.user)).filter(Boolean)
+  )].sort();
+  const getUserKPI = (user) => {
+    const involved = entries.filter((e) => (e.editLog || []).some((l) => l.user === user));
+    const completed = involved.filter((e) => e.timeOut);
+    const inProgress2 = involved.filter((e) => e.timeIn && !e.timeOut);
+    const loadDurations = involved.filter((e) => e.timeStart && e.timeEnd).map((e) => calcDuration(e.timeStart, e.timeEnd)).filter((d) => d != null);
+    const turnaroundDurations = involved.filter((e) => e.timeIn && e.timeOut).map((e) => calcDuration(e.timeIn, e.timeOut)).filter((d) => d != null);
+    const avgLoad = loadDurations.length ? Math.round(loadDurations.reduce((a, b) => a + b, 0) / loadDurations.length) : null;
+    const avgTurn = turnaroundDurations.length ? Math.round(turnaroundDurations.reduce((a, b) => a + b, 0) / turnaroundDurations.length) : null;
+    return { user, total: involved.length, completed: completed.length, inProgress: inProgress2.length, avgLoad, avgTurn, entries: involved };
+  };
+  const uniqueDates = [...new Set(entries.map((e) => e.date))].sort().reverse();
+  const filtered = entries.filter((e) => {
+    const q = search.toLowerCase();
+    const ms = !q || (e.plate || "").toLowerCase().includes(q) || (e.dock || "").toLowerCase().includes(q) || (e.remark || "").toLowerCase().includes(q) || (e.createdBy || "").toLowerCase().includes(q);
+    const md = !filterDate || e.date === filterDate;
+    return ms && md;
+  });
+  const inProgress = entries.filter((e) => e.timeIn && !e.timeOut);
+  const avgLoadMin = (() => {
+    const v = entries.filter((e) => e.timeStart && e.timeEnd);
+    if (!v.length) return "-";
+    const ms = v.map((e) => {
+      const [sh, sm] = e.timeStart.split(":").map(Number);
+      const [eh, em] = e.timeEnd.split(":").map(Number);
+      return eh * 60 + em - (sh * 60 + sm);
+    }).filter((m) => m >= 0);
+    return ms.length ? Math.round(ms.reduce((a, b) => a + b, 0) / ms.length) + " \u0E19\u0E32\u0E17\u0E35" : "-";
+  })();
+  const dockCounts = entries.reduce((a, e) => {
+    if (e.dock) a[e.dock] = (a[e.dock] || 0) + 1;
+    return a;
+  }, {});
+  const topDocks = Object.entries(dockCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const uniqueDatesAll = [...new Set(entries.map((e) => e.date))].sort().reverse();
+  return /* @__PURE__ */ React.createElement("div", { style: S.page }, toast && /* @__PURE__ */ React.createElement("div", { style: S.toast }, toast), confirmDel && /* @__PURE__ */ React.createElement("div", { style: S.overlay }, /* @__PURE__ */ React.createElement("div", { style: __spreadProps(__spreadValues({}, S.modal), { textAlign: "center" }) }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 36, marginBottom: 8 } }, "\u26A0\uFE0F"), /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 800, fontSize: 16, color: "#1e293b", marginBottom: 8 } }, "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E01\u0E32\u0E23\u0E25\u0E1A"), /* @__PURE__ */ React.createElement("div", { style: { color: "#64748b", fontSize: 13, marginBottom: 20 } }, confirmDel === "all" ? "\u0E25\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14" : typeof confirmDel === "string" && confirmDel.startsWith("date:") ? `\u0E25\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E27\u0E31\u0E19 ${confirmDel.replace("date:", "")}` : "\u0E25\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E19\u0E35\u0E49", " \u2014 \u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E01\u0E39\u0E49\u0E04\u0E37\u0E19\u0E44\u0E14\u0E49"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 10 } }, /* @__PURE__ */ React.createElement("button", { onClick: () => setConfirmDel(null), style: __spreadProps(__spreadValues({}, S.btnCancel), { flex: 1 }) }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"), /* @__PURE__ */ React.createElement("button", { onClick: doDelete, style: __spreadProps(__spreadValues({}, S.btnDanger), { flex: 1 }) }, "\u{1F5D1}\uFE0F \u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E25\u0E1A")))), showUserModal && /* @__PURE__ */ React.createElement("div", { style: S.overlay }, /* @__PURE__ */ React.createElement("div", { style: __spreadProps(__spreadValues({}, S.modal), { textAlign: "center" }) }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 36, marginBottom: 8 } }, "\u{1F464}"), /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 800, fontSize: 17, color: "#1e293b", marginBottom: 4 } }, "\u0E15\u0E31\u0E49\u0E07\u0E0A\u0E37\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49"), /* @__PURE__ */ React.createElement("div", { style: { color: "#64748b", fontSize: 13, marginBottom: 16 } }, "\u0E0A\u0E37\u0E48\u0E2D\u0E08\u0E30\u0E41\u0E2A\u0E14\u0E07\u0E43\u0E19\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E01\u0E32\u0E23\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E17\u0E38\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23"), /* @__PURE__ */ React.createElement("input", { type: "text", value: userInput, onChange: (e) => setUserInput(e.target.value), onKeyDown: (e) => e.key === "Enter" && saveUser(), placeholder: "\u0E43\u0E2A\u0E48\u0E0A\u0E37\u0E48\u0E2D\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13...", style: __spreadProps(__spreadValues({}, S.input), { fontSize: 15, marginBottom: 12, textAlign: "center" }), autoFocus: true }), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8 } }, username && /* @__PURE__ */ React.createElement("button", { onClick: () => setShowUserModal(false), style: S.btnCancel }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"), /* @__PURE__ */ React.createElement("button", { onClick: saveUser, style: __spreadProps(__spreadValues({}, S.btnPrimary), { flex: 1 }) }, "\u2705 \u0E22\u0E37\u0E19\u0E22\u0E31\u0E19")))), showDockMgr && /* @__PURE__ */ React.createElement("div", { style: S.overlay }, /* @__PURE__ */ React.createElement("div", { style: __spreadProps(__spreadValues({}, S.modal), { width: "min(96vw,420px)" }) }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 800, fontSize: 16, color: "#1e293b", marginBottom: 14 } }, "\u2699\uFE0F \u0E08\u0E31\u0E14\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E15\u0E39\u0E42\u0E2B\u0E25\u0E14"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 } }, docks.map((d) => /* @__PURE__ */ React.createElement("div", { key: d, style: { display: "flex", alignItems: "center", gap: 4, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "5px 10px" } }, /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 700, color: "#7c3aed" } }, d), /* @__PURE__ */ React.createElement("button", { onClick: () => setDocks((prev) => prev.filter((x) => x !== d)), style: { background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 13, padding: 0, lineHeight: 1 } }, "\u2715")))), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8 } }, /* @__PURE__ */ React.createElement("input", { type: "text", value: newDockName, onChange: (e) => setNewDockName(e.target.value.toUpperCase()), onKeyDown: (e) => {
+    if (e.key === "Enter" && newDockName.trim() && !docks.includes(newDockName.trim())) {
+      setDocks((p) => [...p, newDockName.trim()]);
+      setNewDockName("");
+    }
+  }, placeholder: "\u0E0A\u0E37\u0E48\u0E2D\u0E1B\u0E23\u0E30\u0E15\u0E39\u0E43\u0E2B\u0E21\u0E48 \u0E40\u0E0A\u0E48\u0E19 D1", style: __spreadProps(__spreadValues({}, S.input), { marginBottom: 0, flex: 1 }) }), /* @__PURE__ */ React.createElement("button", { onClick: () => {
+    const n = newDockName.trim();
+    if (n && !docks.includes(n)) {
+      setDocks((p) => [...p, n]);
+      setNewDockName("");
+    }
+  }, style: S.btnPrimary }, "+ \u0E40\u0E1E\u0E34\u0E48\u0E21")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "flex-end", marginTop: 14 } }, /* @__PURE__ */ React.createElement("button", { onClick: () => setShowDockMgr(false), style: S.btnPrimary }, "\u2705 \u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2A\u0E34\u0E49\u0E19")))), showForm && /* @__PURE__ */ React.createElement(
+    EntryModal,
+    {
+      form,
+      setForm,
+      editId,
+      username,
+      onSubmit: handleSubmit,
+      onClose: closeForm
+    }
+  ), showImport && /* @__PURE__ */ React.createElement("div", { style: S.overlay }, /* @__PURE__ */ React.createElement("div", { style: __spreadProps(__spreadValues({}, S.modal), { width: "min(96vw,520px)", maxHeight: "90vh", overflowY: "auto" }) }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 800, fontSize: 16, color: "#1e293b", marginBottom: 4 } }, "\u{1F4E4} \u0E19\u0E33\u0E40\u0E02\u0E49\u0E32\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E32\u0E01 Excel"), /* @__PURE__ */ React.createElement("div", { style: { color: "#64748b", fontSize: 13, marginBottom: 16 } }, "\u0E01\u0E23\u0E2D\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E43\u0E19\u0E44\u0E1F\u0E25\u0E4C Template \u0E41\u0E25\u0E49\u0E27\u0E2D\u0E31\u0E1E\u0E42\u0E2B\u0E25\u0E14\u0E17\u0E35\u0E48\u0E19\u0E35\u0E48"), /* @__PURE__ */ React.createElement("div", { style: { background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "12px 14px", marginBottom: 14 } }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 700, fontSize: 13, color: "#15803d", marginBottom: 6 } }, "\u0E02\u0E31\u0E49\u0E19\u0E15\u0E2D\u0E19\u0E17\u0E35\u0E48 1 \u2014 \u0E14\u0E32\u0E27\u0E19\u0E4C\u0E42\u0E2B\u0E25\u0E14 Template"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: "#166534", marginBottom: 10 } }, "\u0E01\u0E23\u0E2D\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E43\u0E19\u0E44\u0E1F\u0E25\u0E4C Excel \u0E15\u0E32\u0E21\u0E04\u0E2D\u0E25\u0E31\u0E21\u0E19\u0E4C\u0E17\u0E35\u0E48\u0E01\u0E33\u0E2B\u0E19\u0E14 \u0E41\u0E25\u0E49\u0E27\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E1F\u0E25\u0E4C"), /* @__PURE__ */ React.createElement("button", { onClick: downloadTemplate, style: __spreadProps(__spreadValues({}, S.btnPrimary), { background: "#16a34a", fontSize: 12, padding: "7px 14px" }) }, "\u{1F4E5} \u0E14\u0E32\u0E27\u0E19\u0E4C\u0E42\u0E2B\u0E25\u0E14 Template (.xlsx)")), /* @__PURE__ */ React.createElement("div", { style: { background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "12px 14px", marginBottom: 14 } }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 700, fontSize: 13, color: "#1d4ed8", marginBottom: 6 } }, "\u0E02\u0E31\u0E49\u0E19\u0E15\u0E2D\u0E19\u0E17\u0E35\u0E48 2 \u2014 \u0E2D\u0E31\u0E1E\u0E42\u0E2B\u0E25\u0E14\u0E44\u0E1F\u0E25\u0E4C\u0E17\u0E35\u0E48\u0E01\u0E23\u0E2D\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E41\u0E25\u0E49\u0E27"), /* @__PURE__ */ React.createElement("input", { ref: fileInputRef, type: "file", accept: ".xlsx,.xls", onChange: (e) => handleImportFile(e.target.files[0]), style: { display: "none" } }), /* @__PURE__ */ React.createElement("button", { onClick: () => {
+    var _a;
+    return (_a = fileInputRef.current) == null ? void 0 : _a.click();
+  }, style: __spreadProps(__spreadValues({}, S.btnPrimary), { fontSize: 12, padding: "7px 14px", marginBottom: 8 }) }, "\u{1F4C2} \u0E40\u0E25\u0E37\u0E2D\u0E01\u0E44\u0E1F\u0E25\u0E4C Excel"), /* @__PURE__ */ React.createElement(
+    "div",
+    {
+      onDragOver: (e) => {
+        e.preventDefault();
+        e.currentTarget.style.background = "#dbeafe";
+      },
+      onDragLeave: (e) => {
+        e.currentTarget.style.background = "transparent";
+      },
+      onDrop: (e) => {
+        e.preventDefault();
+        e.currentTarget.style.background = "transparent";
+        handleImportFile(e.dataTransfer.files[0]);
+      },
+      style: { border: "2px dashed #93c5fd", borderRadius: 8, padding: "16px", textAlign: "center", fontSize: 12, color: "#3b82f6", cursor: "pointer", marginTop: 6 },
+      onClick: () => {
+        var _a;
+        return (_a = fileInputRef.current) == null ? void 0 : _a.click();
+      }
+    },
+    "\u0E2B\u0E23\u0E37\u0E2D\u0E25\u0E32\u0E01\u0E44\u0E1F\u0E25\u0E4C\u0E21\u0E32\u0E27\u0E32\u0E07\u0E17\u0E35\u0E48\u0E19\u0E35\u0E48"
+  )), importError && /* @__PURE__ */ React.createElement("div", { style: { background: "#fff1f2", border: "1px solid #fecdd3", borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#be123c" } }, "\u26A0\uFE0F ", importError), importRows.length > 0 && /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 14 } }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 700, fontSize: 13, color: "#1e293b", marginBottom: 8 } }, "\u2705 \u0E1E\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25 ", importRows.length, " \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \u2014 \u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E01\u0E48\u0E2D\u0E19\u0E19\u0E33\u0E40\u0E02\u0E49\u0E32"), /* @__PURE__ */ React.createElement("div", { style: { overflowX: "auto", borderRadius: 8, border: "1px solid #e2e8f0", maxHeight: 200, overflowY: "auto" } }, /* @__PURE__ */ React.createElement("table", { style: __spreadProps(__spreadValues({}, S.table), { fontSize: 11 }) }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", { style: { background: "#1e3a5f", position: "sticky", top: 0 } }, ["\u0E1B\u0E23\u0E30\u0E15\u0E39", "\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19", "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48", "\u0E40\u0E02\u0E49\u0E32", "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E42\u0E2B\u0E25\u0E14", "\u0E08\u0E1A", "\u0E2D\u0E2D\u0E01", "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38"].map((h, i) => /* @__PURE__ */ React.createElement("th",{key:"tt",style:S.th},"Truck Type"), React.createElement("th", { key: i, style: __spreadProps(__spreadValues({}, S.th), { fontSize: 10 }) }, h)))), /* @__PURE__ */ React.createElement("tbody", null, importRows.slice(0, 10).map((e, i) => /* @__PURE__ */ React.createElement("tr", { key: i, style: { background: i % 2 === 0 ? "#fff" : "#f8fafc" } }, /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { color: "#7c3aed", fontWeight: 700 }) }, e.dock || "-"), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontWeight: 700 }) }, e.plate), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontSize: 11 }) }, e.date), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontFamily: "monospace" }) }, e.timeIn || "-"), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontFamily: "monospace" }) }, e.timeStart || "-"), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontFamily: "monospace" }) }, e.timeEnd || "-"), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontFamily: "monospace" }) }, e.timeOut || "-"), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { maxWidth: 100, whiteSpace: "normal", fontSize: 11 }) }, e.remark || "-")))))), importRows.length > 10 && /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: "#64748b", marginTop: 4 } }, "\u0E41\u0E2A\u0E14\u0E07 10 \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E41\u0E23\u0E01 \u0E08\u0E32\u0E01\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14 ", importRows.length, " \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23"), /* @__PURE__ */ React.createElement("div", { style: { marginTop: 12, background: "#f8fafc", borderRadius: 8, padding: "10px 12px" } }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 700, fontSize: 12, color: "#1e293b", marginBottom: 8 } }, "\u0E27\u0E34\u0E18\u0E35\u0E19\u0E33\u0E40\u0E02\u0E49\u0E32\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25:"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } }, [["append", "\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E15\u0E48\u0E2D\u0E08\u0E32\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E14\u0E34\u0E21 (\u0E41\u0E19\u0E30\u0E19\u0E33)"], ["replace", "\u0E41\u0E17\u0E19\u0E17\u0E35\u0E48\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14 (\u0E25\u0E1A\u0E02\u0E2D\u0E07\u0E40\u0E14\u0E34\u0E21)"]].map(([v, l]) => /* @__PURE__ */ React.createElement("label", { key: v, style: { display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", color: v === "replace" ? "#dc2626" : "#1e293b" } }, /* @__PURE__ */ React.createElement("input", { type: "radio", name: "importMode", value: v, checked: importMode === v, onChange: () => setImportMode(v) }), l))))), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end" } }, /* @__PURE__ */ React.createElement("button", { onClick: () => {
+    setShowImport(false);
+    setImportRows([]);
+    setImportError("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, style: S.btnCancel }, "\u0E1B\u0E34\u0E14"), importRows.length > 0 && /* @__PURE__ */ React.createElement("button", { onClick: confirmImport, style: __spreadProps(__spreadValues({}, S.btnPrimary), { background: importMode === "replace" ? "linear-gradient(135deg,#dc2626,#b91c1c)" : void 0 }) }, importMode === "replace" ? "\u26A0\uFE0F \u0E41\u0E17\u0E19\u0E17\u0E35\u0E48\u0E41\u0E25\u0E30\u0E19\u0E33\u0E40\u0E02\u0E49\u0E32" : "\u2705 \u0E19\u0E33\u0E40\u0E02\u0E49\u0E32", " ", importRows.length, " \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23")))), showAlertSettings && /* @__PURE__ */ React.createElement("div", { style: S.overlay }, /* @__PURE__ */ React.createElement("div", { style: __spreadProps(__spreadValues({}, S.modal), { width: "min(96vw,480px)", maxHeight: "90vh", overflowY: "auto" }) }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 800, fontSize: 16, color: "#1e293b", marginBottom: 4 } }, "\u2699\uFE0F \u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32\u0E01\u0E32\u0E23\u0E41\u0E08\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: "#64748b", marginBottom: 16 } }, "\u0E40\u0E1B\u0E34\u0E14/\u0E1B\u0E34\u0E14 \u0E41\u0E25\u0E30\u0E01\u0E33\u0E2B\u0E19\u0E14\u0E04\u0E48\u0E32\u0E41\u0E15\u0E48\u0E25\u0E30\u0E40\u0E07\u0E37\u0E48\u0E2D\u0E19\u0E44\u0E02\u0E44\u0E14\u0E49\u0E2D\u0E34\u0E2A\u0E23\u0E30"), /* @__PURE__ */ React.createElement("div", { style: { background: "#f8fafc", borderRadius: 10, padding: "12px 14px", marginBottom: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 700, fontSize: 12, color: "#475569", marginBottom: 10 } }, "\u{1F4E1} \u0E0A\u0E48\u0E2D\u0E07\u0E17\u0E32\u0E07\u0E41\u0E08\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 12, flexWrap: "wrap" } }, [["inApp", "\u{1F514} \u0E41\u0E08\u0E49\u0E07\u0E43\u0E19\u0E41\u0E2D\u0E1B (popup)"], ["browser", "\u{1F5A5}\uFE0F Browser Notification"]].map(([k, l]) => /* @__PURE__ */ React.createElement("label", { key: k, style: { display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 } }, /* @__PURE__ */ React.createElement(
+    "div",
+    {
+      onClick: () => setAlertSettings((p) => __spreadProps(__spreadValues({}, p), { [k]: !p[k] })),
+      style: { width: 40, height: 22, borderRadius: 11, background: alertSettings[k] ? "#2563eb" : "#cbd5e1", position: "relative", cursor: "pointer", transition: "background .2s" }
+    },
+    /* @__PURE__ */ React.createElement("div", { style: { position: "absolute", top: 3, left: alertSettings[k] ? 20 : 3, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left .2s", boxShadow: "0 1px 4px rgba(0,0,0,.2)" } })
+  ), /* @__PURE__ */ React.createElement("span", { style: { color: alertSettings[k] ? "#1e293b" : "#94a3b8" } }, l))))), [
+    {
+      enableKey: "enableWait",
+      maxKey: "maxWait",
+      intKey: "intervalWait",
+      icon: "\u{1F7E1}",
+      title: "\u0E23\u0E2D\u0E40\u0E23\u0E34\u0E48\u0E21\u0E42\u0E2B\u0E25\u0E14\u0E19\u0E32\u0E19\u0E40\u0E01\u0E34\u0E19",
+      color: "#d97706",
+      desc: "\u0E41\u0E08\u0E49\u0E07\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E23\u0E16\u0E40\u0E02\u0E49\u0E32\u0E41\u0E25\u0E49\u0E27\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E40\u0E23\u0E34\u0E48\u0E21\u0E42\u0E2B\u0E25\u0E14\u0E40\u0E01\u0E34\u0E19\u0E40\u0E27\u0E25\u0E32\u0E17\u0E35\u0E48\u0E01\u0E33\u0E2B\u0E19\u0E14"
+    },
+    {
+      enableKey: "enableLoad",
+      maxKey: "maxLoad",
+      intKey: "intervalLoad",
+      icon: "\u{1F534}",
+      title: "\u0E42\u0E2B\u0E25\u0E14\u0E19\u0E32\u0E19\u0E40\u0E01\u0E34\u0E19\u0E01\u0E33\u0E2B\u0E19\u0E14",
+      color: "#dc2626",
+      desc: "\u0E41\u0E08\u0E49\u0E07\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E40\u0E27\u0E25\u0E32\u0E42\u0E2B\u0E25\u0E14\u0E40\u0E01\u0E34\u0E19\u0E01\u0E33\u0E2B\u0E19\u0E14 (\u0E40\u0E23\u0E34\u0E48\u0E21\u0E42\u0E2B\u0E25\u0E14 \u2192 \u0E42\u0E2B\u0E25\u0E14\u0E08\u0E1A)"
+    },
+    {
+      enableKey: "enableStay",
+      maxKey: "maxStay",
+      intKey: "intervalStay",
+      icon: "\u{1F6A8}",
+      title: "\u0E42\u0E2B\u0E25\u0E14\u0E08\u0E1A\u0E41\u0E25\u0E49\u0E27\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E2D\u0E2D\u0E01",
+      color: "#dc2626",
+      desc: "\u0E41\u0E2A\u0E14\u0E07\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21 '\u0E15\u0E34\u0E14\u0E15\u0E48\u0E2D Transport' \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E41\u0E25\u0E30\u0E1B\u0E23\u0E30\u0E15\u0E39"
+    },
+    {
+      enableKey: "enableOvernight",
+      maxKey: null,
+      intKey: null,
+      icon: "\u{1F319}",
+      title: "\u0E23\u0E16\u0E04\u0E49\u0E32\u0E07\u0E02\u0E49\u0E32\u0E21\u0E27\u0E31\u0E19",
+      color: "#7c3aed",
+      desc: "\u0E41\u0E08\u0E49\u0E07\u0E04\u0E23\u0E31\u0E49\u0E07\u0E40\u0E14\u0E35\u0E22\u0E27\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E21\u0E35\u0E23\u0E16\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E2D\u0E2D\u0E01\u0E02\u0E49\u0E32\u0E21\u0E44\u0E1B\u0E27\u0E31\u0E19\u0E16\u0E31\u0E14\u0E44\u0E1B"
+    }
+  ].map(({ enableKey, maxKey, intKey, icon, title, color, desc }) => /* @__PURE__ */ React.createElement("div", { key: enableKey, style: { border: `1.5px solid ${alertSettings[enableKey] ? color + "44" : "#e2e8f0"}`, borderRadius: 10, padding: "12px 14px", marginBottom: 10, background: alertSettings[enableKey] ? "#fff" : "#f8fafc", transition: "border .2s" } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: alertSettings[enableKey] ? 10 : 0 } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 700, fontSize: 13, color: alertSettings[enableKey] ? color : "#94a3b8" } }, icon, " ", title), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: "#94a3b8", marginTop: 2 } }, desc)), /* @__PURE__ */ React.createElement(
+    "div",
+    {
+      onClick: () => setAlertSettings((p) => __spreadProps(__spreadValues({}, p), { [enableKey]: !p[enableKey] })),
+      style: { width: 44, height: 24, borderRadius: 12, background: alertSettings[enableKey] ? color : "#cbd5e1", position: "relative", cursor: "pointer", transition: "background .2s", flexShrink: 0 }
+    },
+    /* @__PURE__ */ React.createElement("div", { style: { position: "absolute", top: 4, left: alertSettings[enableKey] ? 22 : 4, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left .2s", boxShadow: "0 1px 4px rgba(0,0,0,.2)" } })
+  )), alertSettings[enableKey] && maxKey && /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8, paddingTop: 10, borderTop: "1px solid #f1f5f9" } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("label", { style: __spreadProps(__spreadValues({}, S.label), { color }) }, "\u0E40\u0E01\u0E34\u0E19\u0E01\u0E33\u0E2B\u0E19\u0E14 (\u0E19\u0E32\u0E17\u0E35)"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6 } }, /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      type: "number",
+      min: 5,
+      max: 480,
+      value: alertSettings[maxKey],
+      onChange: (e) => setAlertSettings((p) => __spreadProps(__spreadValues({}, p), { [maxKey]: Number(e.target.value) })),
+      style: __spreadProps(__spreadValues({}, S.input), { marginBottom: 0, width: 70, textAlign: "center", fontSize: 14, fontWeight: 700 })
+    }
+  ), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: "#64748b" } }, "\u0E19\u0E32\u0E17\u0E35"))), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("label", { style: __spreadProps(__spreadValues({}, S.label), { color: "#475569" }) }, "\u0E41\u0E08\u0E49\u0E07\u0E0B\u0E49\u0E33\u0E17\u0E38\u0E01 (\u0E19\u0E32\u0E17\u0E35)"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6 } }, /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      type: "number",
+      min: 5,
+      max: 480,
+      value: alertSettings[intKey],
+      onChange: (e) => setAlertSettings((p) => __spreadProps(__spreadValues({}, p), { [intKey]: Number(e.target.value) })),
+      style: __spreadProps(__spreadValues({}, S.input), { marginBottom: 0, width: 70, textAlign: "center", fontSize: 14, fontWeight: 700 })
+    }
+  ), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: "#64748b" } }, "\u0E19\u0E32\u0E17\u0E35")))))), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 } }, /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAlertSettings(false), style: S.btnCancel }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"), /* @__PURE__ */ React.createElement("button", { onClick: () => {
+    alertedRef.current.clear();
+    setShowAlertSettings(false);
+    msg("\u2705 \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E01\u0E32\u0E23\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32\u0E41\u0E25\u0E49\u0E27");
+  }, style: S.btnPrimary }, "\u2705 \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E41\u0E25\u0E30\u0E23\u0E35\u0E40\u0E0B\u0E47\u0E15")))), showAlertPanel && /* @__PURE__ */ React.createElement("div", { style: S.overlay, onClick: () => setShowAlertPanel(false) }, /* @__PURE__ */ React.createElement("div", { style: __spreadProps(__spreadValues({}, S.modal), { width: "min(96vw,560px)", maxHeight: "85vh", overflowY: "auto" }), onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 800, fontSize: 16, color: "#1e293b" } }, "\u{1F514} \u0E01\u0E32\u0E23\u0E41\u0E08\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8 } }, /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAlertSettings(true), style: __spreadProps(__spreadValues({}, S.btnCancel), { fontSize: 12, padding: "4px 10px" }) }, "\u2699\uFE0F \u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32"), alerts.length > 0 && /* @__PURE__ */ React.createElement("button", { onClick: () => {
+    setAlerts([]);
+    alertedRef.current.clear();
+  }, style: __spreadProps(__spreadValues({}, S.btnDangerSm), { fontSize: 12 }) }, "\u0E25\u0E49\u0E32\u0E07\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14"), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAlertPanel(false), style: __spreadProps(__spreadValues({}, S.btnCancel), { padding: "4px 10px", fontSize: 12 }) }, "\u2715"))), alerts.length === 0 ? /* @__PURE__ */ React.createElement("div", { style: { textAlign: "center", padding: "40px 20px", color: "#94a3b8" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 40, marginBottom: 8 } }, "\u2705"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 14 } }, "\u0E44\u0E21\u0E48\u0E21\u0E35\u0E01\u0E32\u0E23\u0E41\u0E08\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19 \u0E17\u0E38\u0E01\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E1B\u0E01\u0E15\u0E34")) : alerts.map((al) => {
+    var _a, _b;
+    return /* @__PURE__ */ React.createElement("div", { key: al.id, style: { background: al.level === "danger" ? "#fff1f2" : "#fffbeb", border: `1.5px solid ${al.level === "danger" ? "#fecdd3" : "#fde68a"}`, borderRadius: 10, padding: "12px 14px", marginBottom: 10 } }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 700, fontSize: 13, color: al.level === "danger" ? "#be123c" : "#92400e", marginBottom: 6, lineHeight: 1.5 } }, al.msg), al.type === "stay" && /* @__PURE__ */ React.createElement("div", { style: { background: "#fee2e2", borderRadius: 8, padding: "8px 12px", marginBottom: 8, fontSize: 12, fontWeight: 700, color: "#991b1b" } }, "\u{1F4DE} \u0E15\u0E34\u0E14\u0E15\u0E48\u0E2D Transport \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E19\u0E33\u0E23\u0E16\u0E2D\u0E2D\u0E01", /* @__PURE__ */ React.createElement("br", null), "\u{1F69B} \u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19: ", /* @__PURE__ */ React.createElement("strong", null, (_a = al.entry) == null ? void 0 : _a.plate), " \xB7 \u{1F6AA} \u0E1B\u0E23\u0E30\u0E15\u0E39: ", /* @__PURE__ */ React.createElement("strong", null, ((_b = al.entry) == null ? void 0 : _b.dock) || "-")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11, color: "#94a3b8" } }, "\u23F0 ", al.at), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 6 } }, /* @__PURE__ */ React.createElement("button", { onClick: () => {
+      setShowAlertPanel(false);
+      setAlerts((prev) => prev.filter((a) => a.id !== al.id));
+      openEdit(al.entry, al.id);
+      setTab("log");
+    }, style: __spreadProps(__spreadValues({}, S.btnPrimary), { fontSize: 11, padding: "3px 10px" }) }, "\u270F\uFE0F \u0E14\u0E39\u0E41\u0E25\u0E30\u0E41\u0E01\u0E49\u0E44\u0E02"), /* @__PURE__ */ React.createElement("button", { onClick: () => setAlerts((prev) => prev.filter((a) => a.id !== al.id)), style: __spreadProps(__spreadValues({}, S.btnDangerSm), { fontSize: 11, padding: "3px 8px" }) }, "\u2715"))));
+  }))), showCallPopup && /* @__PURE__ */ React.createElement("div", { style: { position: "fixed", bottom: 24, right: 24, zIndex: 500, background: "#fff", border: "2px solid #9333ea", borderRadius: 14, padding: "16px 18px", boxShadow: "0 8px 32px rgba(147,51,234,.25)", maxWidth: 320, animation: "slideIn .3s ease" } }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 800, fontSize: 15, color: "#7c3aed", marginBottom: 6 } }, "\u{1F4DE} \u0E40\u0E23\u0E35\u0E22\u0E01\u0E23\u0E16\u0E40\u0E02\u0E49\u0E32!"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, color: "#1e293b", marginBottom: 4 } }, /* @__PURE__ */ React.createElement("strong", null, showCallPopup.calledBy), " \u0E40\u0E23\u0E35\u0E22\u0E01\u0E23\u0E16\u0E40\u0E02\u0E49\u0E32"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, color: "#7c3aed" } }, "\u{1F6AA} \u0E1B\u0E23\u0E30\u0E15\u0E39 ", showCallPopup.dock), showCallPopup.note && /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: "#64748b", marginTop: 4 } }, "\u{1F4DD} ", showCallPopup.note), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: "#94a3b8", marginTop: 6 } }, "\u23F0 ", showCallPopup.calledAt), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowCallPopup(null), style: { position: "absolute", top: 8, right: 10, background: "none", border: "none", fontSize: 16, cursor: "pointer", color: "#94a3b8" } }, "\u2715")), showCallIn && /* @__PURE__ */ React.createElement("div", { style: S.overlay }, /* @__PURE__ */ React.createElement("div", { style: __spreadProps(__spreadValues({}, S.modal), { width: "min(96vw,380px)", textAlign: "center" }) }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 36, marginBottom: 8 } }, "\u{1F4DE}"), /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 800, fontSize: 17, color: "#1e293b", marginBottom: 4 } }, "\u0E40\u0E23\u0E35\u0E22\u0E01\u0E23\u0E16\u0E40\u0E02\u0E49\u0E32\u0E1B\u0E23\u0E30\u0E15\u0E39"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 24, fontWeight: 900, color: "#7c3aed", marginBottom: 12 } }, "\u{1F6AA} ", showCallIn), /* @__PURE__ */ React.createElement("div", { style: { background: "#f8fafc", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 13, color: "#475569" } }, "\u{1F464} \u0E40\u0E23\u0E35\u0E22\u0E01\u0E42\u0E14\u0E22: ", /* @__PURE__ */ React.createElement("strong", null, username)), /* @__PURE__ */ React.createElement("textarea", { value: callNote, onChange: (e) => setCallNote(e.target.value), placeholder: "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38 (\u0E16\u0E49\u0E32\u0E21\u0E35) \u0E40\u0E0A\u0E48\u0E19 \u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E17\u0E35\u0E48\u0E04\u0E32\u0E14\u0E27\u0E48\u0E32\u0E08\u0E30\u0E40\u0E02\u0E49\u0E32...", rows: 2, style: __spreadProps(__spreadValues({}, S.input), { resize: "none", marginBottom: 12, textAlign: "left" }) }), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8 } }, /* @__PURE__ */ React.createElement("button", { onClick: () => {
+    setShowCallIn(null);
+    setCallNote("");
+  }, style: S.btnCancel }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"), /* @__PURE__ */ React.createElement("button", { onClick: () => confirmCallIn(showCallIn, callNote), style: __spreadProps(__spreadValues({}, S.btnPrimary), { flex: 1, background: "linear-gradient(135deg,#9333ea,#7c3aed)" }) }, "\u{1F4DE} \u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E40\u0E23\u0E35\u0E22\u0E01\u0E40\u0E02\u0E49\u0E32")))), editReserve && /* @__PURE__ */ React.createElement("div", { style: S.overlay }, /* @__PURE__ */ React.createElement("div", { style: __spreadProps(__spreadValues({}, S.modal), { width: "min(96vw,380px)" }) }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 800, fontSize: 16, color: "#1e293b", marginBottom: 12 } }, "\u270F\uFE0F \u0E41\u0E01\u0E49\u0E44\u0E02\u0E01\u0E32\u0E23\u0E08\u0E2D\u0E07\u0E1B\u0E23\u0E30\u0E15\u0E39 ", editReserve.dock), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: "#64748b", marginBottom: 8 } }, "\u0E40\u0E23\u0E35\u0E22\u0E01\u0E42\u0E14\u0E22: ", editReserve.reservation.calledBy, " \xB7 ", editReserve.reservation.calledAt), /* @__PURE__ */ React.createElement("label", { style: S.label }, "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38"), /* @__PURE__ */ React.createElement("textarea", { value: callNote, onChange: (e) => setCallNote(e.target.value), rows: 2, style: __spreadProps(__spreadValues({}, S.input), { resize: "none" }) }), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end" } }, /* @__PURE__ */ React.createElement("button", { onClick: () => {
+    setEditReserve(null);
+    setCallNote("");
+  }, style: S.btnCancel }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"), /* @__PURE__ */ React.createElement("button", { onClick: saveEditReserve, style: S.btnPrimary }, "\u2705 \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01")))), showCallLog && (() => {
+    const allIds = new Set(callLog.map((l) => l.id));
+    const allSelected = callLog.length > 0 && callLog.every((l) => selectedCallIds.has(l.id));
+    const toggleAll = () => {
+      if (allSelected) setSelectedCallIds(/* @__PURE__ */ new Set());
+      else setSelectedCallIds(new Set(callLog.map((l) => l.id)));
+    };
+    const toggleOne = (id) => {
+      setSelectedCallIds((prev) => {
+        const n = new Set(prev);
+        n.has(id) ? n.delete(id) : n.add(id);
+        return n;
+      });
+    };
+    const deleteSelected = () => {
+      setCallLog((prev) => prev.filter((l) => !selectedCallIds.has(l.id)));
+      setSelectedCallIds(/* @__PURE__ */ new Set());
+      msg(`\u{1F5D1}\uFE0F \u0E25\u0E1A ${selectedCallIds.size} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E41\u0E25\u0E49\u0E27`);
+    };
+    return /* @__PURE__ */ React.createElement("div", { style: S.overlay, onClick: () => {
+      setShowCallLog(false);
+      setSelectedCallIds(/* @__PURE__ */ new Set());
+    } }, /* @__PURE__ */ React.createElement("div", { style: __spreadProps(__spreadValues({}, S.modal), { width: "min(96vw,660px)", maxHeight: "88vh", overflowY: "auto" }), onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 } }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 800, fontSize: 16, color: "#1e293b" } }, "\u{1F4CB} Transaction \u0E01\u0E32\u0E23\u0E40\u0E23\u0E35\u0E22\u0E01\u0E23\u0E16"), /* @__PURE__ */ React.createElement("button", { onClick: () => {
+      setShowCallLog(false);
+      setSelectedCallIds(/* @__PURE__ */ new Set());
+    }, style: __spreadProps(__spreadValues({}, S.btnCancel), { padding: "4px 10px", fontSize: 12 }) }, "\u2715 \u0E1B\u0E34\u0E14")), callLog.length > 0 && /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 12, padding: "8px 10px", background: "#f8fafc", borderRadius: 8, flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("label", { style: { display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, color: "#475569", fontWeight: 600 } }, /* @__PURE__ */ React.createElement("input", { type: "checkbox", checked: allSelected, onChange: toggleAll, style: { width: 15, height: 15, cursor: "pointer" } }), "\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14 (", callLog.length, ")"), selectedCallIds.size > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { style: { color: "#94a3b8", fontSize: 12 } }, "\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E41\u0E25\u0E49\u0E27 ", selectedCallIds.size, " \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23"), /* @__PURE__ */ React.createElement("button", { onClick: deleteSelected, style: __spreadProps(__spreadValues({}, S.btnDanger), { fontSize: 12, padding: "5px 12px" }) }, "\u{1F5D1}\uFE0F \u0E25\u0E1A\u0E17\u0E35\u0E48\u0E40\u0E25\u0E37\u0E2D\u0E01 (", selectedCallIds.size, ")")), selectedCallIds.size === 0 && /* @__PURE__ */ React.createElement("button", { onClick: () => {
+      if (window.confirm("\u0E25\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14\u0E43\u0E19 Log?")) {
+        setCallLog([]);
+        setSelectedCallIds(/* @__PURE__ */ new Set());
+      }
+    }, style: __spreadProps(__spreadValues({}, S.btnDangerSm), { fontSize: 11, marginLeft: "auto" }) }, "\u{1F5D1}\uFE0F \u0E25\u0E49\u0E32\u0E07\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14")), callLog.length === 0 ? /* @__PURE__ */ React.createElement("div", { style: S.empty }, "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E01\u0E32\u0E23\u0E40\u0E23\u0E35\u0E22\u0E01\u0E23\u0E16") : /* @__PURE__ */ React.createElement("div", { style: { overflowX: "auto" } }, /* @__PURE__ */ React.createElement("table", { style: __spreadProps(__spreadValues({}, S.table), { fontSize: 12 }) }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", { style: { background: "#1e3a5f" } }, /* @__PURE__ */ React.createElement("th", { style: S.th }), ["\u0E1B\u0E23\u0E30\u0E15\u0E39", "\u0E40\u0E23\u0E35\u0E22\u0E01\u0E42\u0E14\u0E22", "\u0E40\u0E27\u0E25\u0E32", "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38", "\u0E2A\u0E16\u0E32\u0E19\u0E30", "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E40\u0E21\u0E37\u0E48\u0E2D"].map((h, i) => /* @__PURE__ */ React.createElement("th", { key: i, style: S.th }, h)))), /* @__PURE__ */ React.createElement("tbody", null, callLog.map((l, i) => {
+      const checked = selectedCallIds.has(l.id);
+      return /* @__PURE__ */ React.createElement("tr", { key: l.id, style: { background: checked ? "#f0f9ff" : i % 2 === 0 ? "#fff" : "#f8fafc", transition: "background .1s" } }, /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { width: 32 }) }, /* @__PURE__ */ React.createElement("input", { type: "checkbox", checked, onChange: () => toggleOne(l.id), style: { width: 15, height: 15, cursor: "pointer" } })), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontWeight: 700, color: "#7c3aed" }) }, "\u{1F6AA} ", l.dock), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontWeight: 700 }) }, l.calledBy), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontFamily: "monospace" }) }, l.calledAt), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { maxWidth: 130, whiteSpace: "normal", fontSize: 11, color: "#64748b" }) }, l.note || "-"), /* @__PURE__ */ React.createElement("td", { style: S.td }, /* @__PURE__ */ React.createElement("span", { style: { background: l.status === "\u0E08\u0E2D\u0E07" ? "#faf5ff" : "#f3f4f6", color: l.status === "\u0E08\u0E2D\u0E07" ? "#7c3aed" : "#6b7280", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 700, border: `1px solid ${l.status === "\u0E08\u0E2D\u0E07" ? "#e9d5ff" : "#e2e8f0"}` } }, l.status === "\u0E08\u0E2D\u0E07" ? "\u{1F7E3} \u0E08\u0E2D\u0E07" : "\u2715 \u0E22\u0E01\u0E40\u0E25\u0E34\u0E01")), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontSize: 11, color: "#94a3b8" }) }, l.cancelledAt || "-"));
+    }))))));
+  })(), /* @__PURE__ */ React.createElement("div", { style: S.header }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: S.hTitle }, "\u{1F69B} \u0E23\u0E30\u0E1A\u0E1A\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E40\u0E27\u0E25\u0E32\u0E23\u0E16"), /* @__PURE__ */ React.createElement("div", { style: S.hSub }, "Vehicle Time Log \xB7 ", todayFull())), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 4, alignItems: "center" } }, /* @__PURE__ */ React.createElement("button", { onClick: () => {
+    setUserInput(username);
+    setShowUserModal(true);
+  }, style: S.userBtn }, "\u{1F464} ", username || "\u0E15\u0E31\u0E49\u0E07\u0E0A\u0E37\u0E48\u0E2D"), username && /* @__PURE__ */ React.createElement("button", { onClick: handleLogout, style: __spreadProps(__spreadValues({}, S.userBtn), { background: "rgba(239,68,68,.2)", border: "1.5px solid rgba(239,68,68,.5)", fontSize: 11, padding: "6px 10px" }), title: "\u0E2D\u0E2D\u0E01\u0E08\u0E32\u0E01\u0E23\u0E30\u0E1A\u0E1A" }, "\u0E2D\u0E2D\u0E01")), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAlertPanel(true), style: __spreadProps(__spreadValues({}, S.userBtn), { position: "relative", background: alerts.length > 0 ? "rgba(239,68,68,.25)" : "rgba(255,255,255,.15)", border: alerts.length > 0 ? "1.5px solid rgba(239,68,68,.6)" : "1.5px solid rgba(255,255,255,.4)" }) }, "\u{1F514} \u0E41\u0E08\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19", alerts.length > 0 && /* @__PURE__ */ React.createElement("span", { style: { position: "absolute", top: -6, right: -6, background: "#ef4444", color: "#fff", borderRadius: "50%", width: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #1e3a5f" } }, alerts.length > 9 ? "9+" : alerts.length)), /* @__PURE__ */ React.createElement("button", { onClick: () => {
+    setShowCallLog(true);
+    setUnreadCallCount(0);
+  }, style: __spreadProps(__spreadValues({}, S.btnSec), { position: "relative" }) }, "\u{1F4CB} Log \u0E40\u0E23\u0E35\u0E22\u0E01\u0E23\u0E16", unreadCallCount > 0 && /* @__PURE__ */ React.createElement("span", { style: { position: "absolute", top: -6, right: -6, background: "#9333ea", color: "#fff", borderRadius: "50%", width: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #1e3a5f" } }, unreadCallCount > 9 ? "9+" : unreadCallCount)), /* @__PURE__ */ React.createElement("button", { onClick: downloadTemplate, style: S.btnSec }, "\u{1F4E5} Template"), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowImport(true), style: S.btnSec }, "\u{1F4E4} \u0E19\u0E33\u0E40\u0E02\u0E49\u0E32\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25"), /* @__PURE__ */ React.createElement("button", { onClick: exportExcel, style: S.btnSec }, "\u{1F4CA} Export Excel"), /* @__PURE__ */ React.createElement("button", { onClick: openNew, style: S.btnPrimary }, "+ \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23"))), /* @__PURE__ */ React.createElement("div", { style: S.tabBar }, [["gate", "\u{1F6AA} \u0E1B\u0E23\u0E30\u0E15\u0E39\u0E42\u0E2B\u0E25\u0E14"], ["log", "\u{1F4CB} \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E16"], ["dashboard", "\u{1F4CA} \u0E41\u0E14\u0E0A\u0E1A\u0E2D\u0E23\u0E4C\u0E14"], ["kpi", "\u{1F3C6} KPI"]].map(([k, l]) => /* @__PURE__ */ React.createElement("button", { key: k, onClick: () => setTab(k), style: __spreadValues(__spreadValues({}, S.tab), tab === k ? S.tabActive : {}) }, l))), inProgress.length > 0 && /* @__PURE__ */ React.createElement("div", { style: S.alertBar }, "\u{1F69B} \u0E23\u0E16\u0E04\u0E49\u0E32\u0E07\u0E2D\u0E22\u0E39\u0E48 ", inProgress.length, " \u0E04\u0E31\u0E19:", " ", inProgress.map((e) => /* @__PURE__ */ React.createElement("span", { key: e.id, style: S.alertChip, onClick: () => {
+    setTab("log");
+    openEdit(e);
+  } }, e.plate, e.dock ? ` \xB7 ${e.dock}` : ""))), tab === "gate" && /* @__PURE__ */ React.createElement("div", { style: { padding: "14px 14px 0" } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 } }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 700, fontSize: 15, color: "#1e293b" } }, "\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E1B\u0E23\u0E30\u0E15\u0E39\u0E42\u0E2B\u0E25\u0E14\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32"), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowDockMgr(true), style: __spreadProps(__spreadValues({}, S.btnCancel), { fontSize: 12, padding: "5px 12px" }) }, "\u2699\uFE0F \u0E08\u0E31\u0E14\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E15\u0E39")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" } }, [["#22c55e", "\u0E27\u0E48\u0E32\u0E07"], ["#c084fc", "\u0E08\u0E2D\u0E07"], ["#4ade80", "\u0E23\u0E16\u0E40\u0E02\u0E49\u0E32\u0E1B\u0E23\u0E30\u0E15\u0E39"], ["#fbbf24", "\u0E01\u0E33\u0E25\u0E31\u0E07\u0E42\u0E2B\u0E25\u0E14"], ["#60a5fa", "\u0E42\u0E2B\u0E25\u0E14\u0E08\u0E1A"], ["#9ca3af", "\u0E2D\u0E2D\u0E01\u0E41\u0E25\u0E49\u0E27"]].map(([c, l]) => /* @__PURE__ */ React.createElement("div", { key: l, style: { display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "#475569" } }, /* @__PURE__ */ React.createElement("div", { style: { width: 10, height: 10, borderRadius: "50%", background: c } }), l))), /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(170px,1fr))", gap: 12 } }, docks.map((dock) => /* @__PURE__ */ React.createElement(
+    GateCard,
+    {
+      key: dock,
+      dock,
+      activeEntry: getActiveForDock(dock),
+      reservation: reservations[dock],
+      onOpen: openFromGate,
+      onCallIn: handleCallIn,
+      onCancelReserve: cancelReservation,
+      onEditReserve: (dock2, res) => {
+        setEditReserve({ dock: dock2, reservation: res });
+        setCallNote(res.note || "");
+      }
+    }
+  ))), docks.length === 0 && /* @__PURE__ */ React.createElement("div", { style: __spreadProps(__spreadValues({}, S.empty), { background: "#fff", borderRadius: 12, border: "1px dashed #e2e8f0" }) }, "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E1B\u0E23\u0E30\u0E15\u0E39 \xB7 \u0E01\u0E14 \u2699\uFE0F \u0E08\u0E31\u0E14\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E15\u0E39 \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E40\u0E1E\u0E34\u0E48\u0E21")), tab === "log" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: S.filterBar }, /* @__PURE__ */ React.createElement("input", { type: "text", placeholder: "\u{1F50D} \u0E04\u0E49\u0E19\u0E2B\u0E32 \u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19 / \u0E1B\u0E23\u0E30\u0E15\u0E39 / \u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38 / \u0E0A\u0E37\u0E48\u0E2D...", value: search, onChange: (e) => setSearch(e.target.value), style: __spreadProps(__spreadValues({}, S.input), { flex: 1, minWidth: 180, margin: 0 }) }), /* @__PURE__ */ React.createElement("select", { value: filterDate, onChange: (e) => setFilterDate(e.target.value), style: __spreadProps(__spreadValues({}, S.input), { margin: 0, minWidth: 130 }) }, /* @__PURE__ */ React.createElement("option", { value: "" }, "\u{1F4C5} \u0E17\u0E38\u0E01\u0E27\u0E31\u0E19"), uniqueDates.map((d) => /* @__PURE__ */ React.createElement("option", { key: d, value: d }, d))), /* @__PURE__ */ React.createElement("div", { style: S.countBadge }, filtered.length, " \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23"), filterDate && /* @__PURE__ */ React.createElement("button", { onClick: () => setConfirmDel(`date:${filterDate}`), style: S.btnDangerSm }, "\u{1F5D1}\uFE0F \u0E25\u0E1A\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49"), entries.length > 0 && !filterDate && /* @__PURE__ */ React.createElement("button", { onClick: () => setConfirmDel("all"), style: S.btnDangerSm }, "\u{1F5D1}\uFE0F \u0E25\u0E1A\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14")), /* @__PURE__ */ React.createElement("div", { style: S.tableWrap }, filtered.length === 0 ? /* @__PURE__ */ React.createElement("div", { style: S.empty }, '\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \xB7 \u0E01\u0E14 "+ \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23" \u0E2B\u0E23\u0E37\u0E2D\u0E01\u0E14\u0E17\u0E35\u0E48\u0E1B\u0E23\u0E30\u0E15\u0E39\u0E43\u0E19\u0E2B\u0E19\u0E49\u0E32 \u{1F6AA}') : /* @__PURE__ */ React.createElement("table", { style: S.table }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", { style: { background: "#1e3a5f" } }, ["\u0E1B\u0E23\u0E30\u0E15\u0E39\u0E42\u0E2B\u0E25\u0E14", "\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19\u0E23\u0E16", "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48", "\u0E40\u0E02\u0E49\u0E32\u0E1B\u0E23\u0E30\u0E15\u0E39", "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E42\u0E2B\u0E25\u0E14", "\u0E42\u0E2B\u0E25\u0E14\u0E08\u0E1A", "\u0E2D\u0E2D\u0E01\u0E1B\u0E23\u0E30\u0E15\u0E39", "\u0E2A\u0E16\u0E32\u0E19\u0E30", "\u0E14\u0E33\u0E40\u0E19\u0E34\u0E19\u0E01\u0E32\u0E23\u0E15\u0E48\u0E2D", "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38", "\u0E1C\u0E39\u0E49\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01", ""].map((h, i) => /* @__PURE__ */ React.createElement("th", { key: i, style: S.th }, h)))), /* @__PURE__ */ React.createElement("tbody", null, filtered.map((e, i) => {
+    const st = getStatus(e);
+    return /* @__PURE__ */ React.createElement("tr", { key: e.id, style: __spreadProps(__spreadValues({}, S.tr), { background: i % 2 === 0 ? "#fff" : "#f8fafc" }) }, /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontWeight: 700, color: "#7c3aed" }) }, e.dock || /* @__PURE__ */ React.createElement("span", { style: { color: "#e2e8f0" } }, "-")), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontWeight: 800, fontSize: 14, color: "#1e293b" }) }, e.plate || "-"), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontSize: 12, color: "#64748b" }) }, e.date), /* @__PURE__ */ React.createElement("td", { style: S.td }, /* @__PURE__ */ React.createElement(TC, { value: e.timeIn, color: "#2563eb" })), /* @__PURE__ */ React.createElement("td", { style: S.td }, /* @__PURE__ */ React.createElement(TC, { value: e.timeStart, color: "#d97706" })), /* @__PURE__ */ React.createElement("td", { style: S.td }, /* @__PURE__ */ React.createElement(TC, { value: e.timeEnd, color: "#16a34a" })), /* @__PURE__ */ React.createElement("td", { style: S.td }, /* @__PURE__ */ React.createElement(TC, { value: e.timeOut, color: "#6b7280" })), /* @__PURE__ */ React.createElement("td", { style: S.td }, /* @__PURE__ */ React.createElement(Badge, { label: st.label, color: st.color, bg: st.bg })), /* @__PURE__ */ React.createElement("td", { style: S.td }, /* @__PURE__ */ React.createElement(QuickStamp, { entry: e, onStamp: handleQuickStamp, user: username })), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { maxWidth: 150, color: "#64748b", fontSize: 12, whiteSpace: "normal" }) }, e.remark || /* @__PURE__ */ React.createElement("span", { style: { color: "#e2e8f0" } }, "-")), /* @__PURE__ */ React.createElement("td", { style: S.td }, /* @__PURE__ */ React.createElement(EditHistory, { log: e.editLog })), /* @__PURE__ */ React.createElement("td", { style: S.td }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 3 } }, /* @__PURE__ */ React.createElement("button", { onClick: () => openEdit(e), style: S.iconBtn, title: "\u0E41\u0E01\u0E49\u0E44\u0E02" }, "\u270F\uFE0F"), /* @__PURE__ */ React.createElement("button", { onClick: () => setConfirmDel(e.id), style: S.iconBtn, title: "\u0E25\u0E1A" }, "\u{1F5D1}\uFE0F"))));
+  }))))), tab === "dashboard" && (() => {
+    const dashEntries = dashDate ? entries.filter((e) => e.date === dashDate) : entries;
+    const dashDockCounts = dashEntries.reduce((a, e) => {
+      if (e.dock) a[e.dock] = (a[e.dock] || 0) + 1;
+      return a;
+    }, {});
+    const dashTopDocks = Object.entries(dashDockCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    const dashAvgLoad = (() => {
+      const v = dashEntries.filter((e) => e.timeStart && e.timeEnd);
+      if (!v.length) return "-";
+      const ms = v.map((e) => {
+        const [sh, sm] = e.timeStart.split(":").map(Number);
+        const [eh, em] = e.timeEnd.split(":").map(Number);
+        return eh * 60 + em - (sh * 60 + sm);
+      }).filter((m) => m >= 0);
+      return ms.length ? Math.round(ms.reduce((a, b) => a + b, 0) / ms.length) + " \u0E19\u0E32\u0E17\u0E35" : "-";
+    })();
+    const isToday = dashDate === todayStr();
+    return /* @__PURE__ */ React.createElement("div", { style: { padding: "0 14px" } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, padding: "14px 0 0", alignItems: "center", flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 700, fontSize: 14, color: "#1e293b" } }, "\u{1F4C5} \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48:"), /* @__PURE__ */ React.createElement("button", { onClick: () => setDashDate(todayStr()), style: __spreadValues(__spreadValues({}, S.dateChip), dashDate === todayStr() ? S.dateChipActive : {}) }, "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49"), uniqueDatesAll.filter((d) => d !== todayStr()).slice(0, 5).map((d) => /* @__PURE__ */ React.createElement("button", { key: d, onClick: () => setDashDate(d), style: __spreadValues(__spreadValues({}, S.dateChip), dashDate === d ? S.dateChipActive : {}) }, d)), /* @__PURE__ */ React.createElement("select", { value: dashDate, onChange: (e) => setDashDate(e.target.value), style: __spreadProps(__spreadValues({}, S.input), { margin: 0, minWidth: 130, fontSize: 12 }) }, /* @__PURE__ */ React.createElement("option", { value: "" }, "\u{1F4CB} \u0E17\u0E38\u0E01\u0E27\u0E31\u0E19"), uniqueDatesAll.map((d) => /* @__PURE__ */ React.createElement("option", { key: d, value: d }, d))), !dashDate && /* @__PURE__ */ React.createElement("button", { onClick: () => setDashDate(todayStr()), style: S.btnCancel }, "\u0E01\u0E25\u0E31\u0E1A\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49")), /* @__PURE__ */ React.createElement("div", { style: { background: isToday ? "linear-gradient(135deg,#1e3a5f,#2563eb)" : "linear-gradient(135deg,#374151,#4b5563)", borderRadius: 12, padding: "14px 18px", marginTop: 12, color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center" } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, opacity: 0.8 } }, isToday ? "\u{1F4C5} \u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" : "\u{1F4C5} \u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E27\u0E31\u0E19"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 20, fontWeight: 800, marginTop: 2 } }, dashDate || "\u0E17\u0E38\u0E01\u0E27\u0E31\u0E19")), /* @__PURE__ */ React.createElement("div", { style: { textAlign: "right" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 28, fontWeight: 900 } }, dashEntries.length), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, opacity: 0.8 } }, "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14"))), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 } }, /* @__PURE__ */ React.createElement(StatCard, { icon: "\u{1F69B}", label: "\u0E23\u0E16\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14", value: dashEntries.length, color: "#1e293b" }), /* @__PURE__ */ React.createElement(StatCard, { icon: "\u{1F7E2}", label: "\u0E23\u0E16\u0E40\u0E02\u0E49\u0E32\u0E1B\u0E23\u0E30\u0E15\u0E39", value: dashEntries.filter((e) => e.timeIn && !e.timeOut).length, color: "#16a34a" }), /* @__PURE__ */ React.createElement(StatCard, { icon: "\u{1F7E1}", label: "\u0E01\u0E33\u0E25\u0E31\u0E07\u0E42\u0E2B\u0E25\u0E14", value: dashEntries.filter((e) => e.timeStart && !e.timeEnd).length, color: "#d97706" }), /* @__PURE__ */ React.createElement(StatCard, { icon: "\u2705", label: "\u0E2D\u0E2D\u0E01\u0E41\u0E25\u0E49\u0E27", value: dashEntries.filter((e) => e.timeOut).length, color: "#2563eb" }), /* @__PURE__ */ React.createElement(StatCard, { icon: "\u23F1", label: "\u0E42\u0E2B\u0E25\u0E14\u0E40\u0E09\u0E25\u0E35\u0E48\u0E22", value: dashAvgLoad, color: "#7c3aed" })), isToday && /* @__PURE__ */ React.createElement("div", { style: __spreadProps(__spreadValues({}, S.card), { margin: "12px 0 0" }) }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 700, fontSize: 14, color: "#1e293b", marginBottom: 12 } }, "\u{1F6AA} \u0E2A\u0E16\u0E32\u0E19\u0E30\u0E1B\u0E23\u0E30\u0E15\u0E39\u0E15\u0E2D\u0E19\u0E19\u0E35\u0E49"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8 } }, docks.map((dock) => {
+      const ae = getActiveForDock(dock);
+      const st = getStatus(ae);
+      return /* @__PURE__ */ React.createElement("div", { key: dock, style: { background: st.bg, border: `1.5px solid ${st.color}44`, borderRadius: 10, padding: "8px 14px", minWidth: 90, textAlign: "center" } }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 800, color: "#1e293b", fontSize: 14 } }, "\u{1F6AA} ", dock), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: st.color, marginTop: 3 } }, st.label), ae && /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: "#475569", marginTop: 2 } }, ae.plate));
+    }))), /* @__PURE__ */ React.createElement("div", { style: __spreadProps(__spreadValues({}, S.card), { margin: "12px 0 0" }) }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 700, fontSize: 14, color: "#1e293b", marginBottom: 12 } }, "\u{1F4CA} \u0E1B\u0E23\u0E30\u0E15\u0E39\u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49", dashDate ? "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" : "\u0E1A\u0E48\u0E2D\u0E22"), dashTopDocks.length === 0 ? /* @__PURE__ */ React.createElement("div", { style: { color: "#94a3b8", fontSize: 13 } }, "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25") : dashTopDocks.map(([dock, count]) => {
+      const max = dashTopDocks[0][1];
+      return /* @__PURE__ */ React.createElement("div", { key: dock, style: { marginBottom: 10 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 3, fontSize: 13 } }, /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 700, color: "#7c3aed" } }, dock), /* @__PURE__ */ React.createElement("span", { style: { color: "#64748b" } }, count, " \u0E04\u0E31\u0E19")), /* @__PURE__ */ React.createElement("div", { style: { height: 8, background: "#f1f5f9", borderRadius: 8 } }, /* @__PURE__ */ React.createElement("div", { style: { height: 8, background: "linear-gradient(90deg,#7c3aed,#a78bfa)", borderRadius: 8, width: `${count / max * 100}%`, transition: "width .4s" } })));
+    })), /* @__PURE__ */ React.createElement("div", { style: __spreadProps(__spreadValues({}, S.card), { margin: "12px 0 0" }) }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 } }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 700, fontSize: 14, color: "#1e293b" } }, "\u{1F4CB} \u0E2A\u0E23\u0E38\u0E1B\u0E17\u0E38\u0E01\u0E27\u0E31\u0E19"), entries.length > 0 && /* @__PURE__ */ React.createElement("button", { onClick: () => setConfirmDel("all"), style: S.btnDangerSm }, "\u{1F5D1}\uFE0F \u0E25\u0E1A\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14")), /* @__PURE__ */ React.createElement("div", { style: { overflowX: "auto" } }, /* @__PURE__ */ React.createElement("table", { style: __spreadProps(__spreadValues({}, S.table), { fontSize: 12 }) }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", { style: { background: "#1e3a5f" } }, ["\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48", "\u0E23\u0E16\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14", "\u0E23\u0E16\u0E40\u0E02\u0E49\u0E32\u0E1B\u0E23\u0E30\u0E15\u0E39", "\u0E42\u0E2B\u0E25\u0E14\u0E08\u0E1A", "\u0E2D\u0E2D\u0E01\u0E41\u0E25\u0E49\u0E27", ""].map((h, i) => /* @__PURE__ */ React.createElement("th", { key: i, style: S.th }, h)))), /* @__PURE__ */ React.createElement("tbody", null, uniqueDatesAll.map((d, i) => {
+      const de = entries.filter((e) => e.date === d);
+      const isSelected = d === dashDate;
+      return /* @__PURE__ */ React.createElement("tr", { key: d, onClick: () => setDashDate(d), style: __spreadProps(__spreadValues({}, S.tr), { background: isSelected ? "#eff6ff" : i % 2 === 0 ? "#fff" : "#f8fafc", cursor: "pointer", outline: isSelected ? "2px solid #2563eb" : "none" }) }, /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontWeight: 700, color: isSelected ? "#2563eb" : "#1e293b" }) }, d, isSelected && " \u25C0"), /* @__PURE__ */ React.createElement("td", { style: S.td }, de.length), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { color: "#16a34a", fontWeight: 700 }) }, de.filter((e) => e.timeIn && !e.timeOut).length), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { color: "#2563eb", fontWeight: 700 }) }, de.filter((e) => e.timeEnd).length), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { color: "#6b7280", fontWeight: 700 }) }, de.filter((e) => e.timeOut).length), /* @__PURE__ */ React.createElement("td", { style: S.td }, /* @__PURE__ */ React.createElement("button", { onClick: (ev) => {
+        ev.stopPropagation();
+        setConfirmDel(`date:${d}`);
+      }, style: __spreadProps(__spreadValues({}, S.btnDangerSm), { fontSize: 10, padding: "2px 8px" }) }, "\u{1F5D1}\uFE0F")));
+    }))))));
+  })(), tab === "kpi" && /* @__PURE__ */ React.createElement("div", { style: { padding: "14px 14px 0" } }, kpiUser && (() => {
+    const kpi = getUserKPI(kpiUser);
+    return /* @__PURE__ */ React.createElement("div", { style: S.overlay, onClick: () => setKpiUser(null) }, /* @__PURE__ */ React.createElement("div", { style: __spreadProps(__spreadValues({}, S.modal), { width: "min(96vw,680px)", maxHeight: "88vh", overflowY: "auto" }), onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 28, marginBottom: 4 } }, "\u{1F464}"), /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 800, fontSize: 18, color: "#1e293b" } }, kpi.user), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: "#64748b", marginTop: 2 } }, "\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E07\u0E32\u0E19\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14 ", kpi.total, " \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23")), /* @__PURE__ */ React.createElement("button", { onClick: () => setKpiUser(null), style: __spreadProps(__spreadValues({}, S.btnCancel), { padding: "4px 10px", fontSize: 12 }) }, "\u2715 \u0E1B\u0E34\u0E14")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 } }, [
+      ["\u{1F4E6}", "\u0E07\u0E32\u0E19\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14", kpi.total, "#1e293b"],
+      ["\u2705", "\u0E42\u0E2B\u0E25\u0E14\u0E40\u0E2A\u0E23\u0E47\u0E08", kpi.completed, "#16a34a"],
+      ["\u{1F504}", "\u0E01\u0E33\u0E25\u0E31\u0E07\u0E14\u0E33\u0E40\u0E19\u0E34\u0E19\u0E01\u0E32\u0E23", kpi.inProgress, "#d97706"],
+      ["\u23F1", "\u0E42\u0E2B\u0E25\u0E14\u0E40\u0E09\u0E25\u0E35\u0E48\u0E22", fmtMin(kpi.avgLoad), "#2563eb"],
+      ["\u{1F69B}", "\u0E23\u0E2D\u0E1A\u0E23\u0E27\u0E21\u0E40\u0E09\u0E25\u0E35\u0E48\u0E22", fmtMin(kpi.avgTurn), "#7c3aed"]
+    ].map(([ico, lbl, val, c]) => /* @__PURE__ */ React.createElement("div", { key: lbl, style: { background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 14px", flex: 1, minWidth: 90, textAlign: "center" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18 } }, ico), /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 800, fontSize: 18, color: c } }, val), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 10, color: "#64748b", marginTop: 2 } }, lbl)))), /* @__PURE__ */ React.createElement("div", { style: { overflowX: "auto", borderRadius: 8, border: "1px solid #e2e8f0" } }, /* @__PURE__ */ React.createElement("table", { style: __spreadProps(__spreadValues({}, S.table), { fontSize: 12 }) }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", { style: { background: "#1e3a5f" } }, ["\u0E1B\u0E23\u0E30\u0E15\u0E39", "\u0E17\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E19", "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48", "\u0E40\u0E02\u0E49\u0E32", "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E42\u0E2B\u0E25\u0E14", "\u0E08\u0E1A", "\u0E2D\u0E2D\u0E01", "\u0E40\u0E27\u0E25\u0E32\u0E42\u0E2B\u0E25\u0E14", "\u0E23\u0E2D\u0E1A\u0E23\u0E27\u0E21", "\u0E2A\u0E16\u0E32\u0E19\u0E30"].map((h, i) => /* @__PURE__ */ React.createElement("th", { key: i, style: __spreadProps(__spreadValues({}, S.th), { fontSize: 10 }) }, h)))), /* @__PURE__ */ React.createElement("tbody", null, kpi.entries.map((e, i) => {
+      const loadMin = calcDuration(e.timeStart, e.timeEnd);
+      const turnMin = calcDuration(e.timeIn, e.timeOut);
+      const st = getStatus(e);
+      return /* @__PURE__ */ React.createElement("tr", { key: e.id, style: { background: i % 2 === 0 ? "#fff" : "#f8fafc" } }, /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { color: "#7c3aed", fontWeight: 700 }) }, e.dock || "-"), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontWeight: 700 }) }, e.plate), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontSize: 11, color: "#64748b" }) }, e.date), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontFamily: "monospace", color: "#2563eb" }) }, e.timeIn || "-"), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontFamily: "monospace", color: "#d97706" }) }, e.timeStart || "-"), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontFamily: "monospace", color: "#16a34a" }) }, e.timeEnd || "-"), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontFamily: "monospace", color: "#6b7280" }) }, e.timeOut || "-"), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontWeight: 700, color: loadMin != null && loadMin <= 30 ? "#16a34a" : loadMin != null && loadMin <= 60 ? "#d97706" : "#dc2626" }) }, fmtMin(loadMin)), /* @__PURE__ */ React.createElement("td", { style: __spreadProps(__spreadValues({}, S.td), { fontWeight: 700, color: "#475569" }) }, fmtMin(turnMin)), /* @__PURE__ */ React.createElement("td", { style: S.td }, /* @__PURE__ */ React.createElement("span", { style: { background: st.bg, color: st.color, borderRadius: 6, padding: "2px 7px", fontSize: 10, fontWeight: 700, border: `1px solid ${st.color}33` } }, st.label)));
+    }))))));
+  })(), /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 700, fontSize: 15, color: "#1e293b", marginBottom: 4 } }, "\u{1F3C6} KPI \u0E1C\u0E39\u0E49\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: "#64748b", marginBottom: 14 } }, "\u0E01\u0E14\u0E17\u0E35\u0E48\u0E0A\u0E37\u0E48\u0E2D\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E14\u0E39\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E41\u0E15\u0E48\u0E25\u0E30\u0E04\u0E31\u0E19"), allUsers.length === 0 ? /* @__PURE__ */ React.createElement("div", { style: __spreadProps(__spreadValues({}, S.empty), { background: "#fff", borderRadius: 12, border: "1px dashed #e2e8f0" }) }, "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25 \xB7 \u0E40\u0E23\u0E34\u0E48\u0E21\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E14\u0E39 KPI") : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 12 } }, allUsers.map((user, idx) => {
+    const kpi = getUserKPI(user);
+    const colors = ["#2563eb", "#16a34a", "#d97706", "#7c3aed", "#dc2626", "#0891b2"];
+    const c = colors[idx % colors.length];
+    const pctDone = kpi.total ? Math.round(kpi.completed / kpi.total * 100) : 0;
+    return /* @__PURE__ */ React.createElement(
+      "div",
+      {
+        key: user,
+        onClick: () => setKpiUser(user),
+        style: { background: "#fff", borderRadius: 14, border: `2px solid ${c}22`, padding: "16px", cursor: "pointer", boxShadow: "0 2px 10px rgba(0,0,0,.07)", transition: "transform .15s,box-shadow .15s" },
+        onMouseEnter: (e) => {
+          e.currentTarget.style.transform = "translateY(-2px)";
+          e.currentTarget.style.boxShadow = `0 8px 24px ${c}22`;
+        },
+        onMouseLeave: (e) => {
+          e.currentTarget.style.transform = "";
+          e.currentTarget.style.boxShadow = "0 2px 10px rgba(0,0,0,.07)";
+        }
+      },
+      /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { width: 36, height: 36, borderRadius: "50%", background: c, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 15, marginBottom: 6 } }, user.charAt(0).toUpperCase()), /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 800, fontSize: 15, color: "#1e293b" } }, user)), /* @__PURE__ */ React.createElement("span", { style: { background: `${c}18`, color: c, borderRadius: 8, padding: "3px 10px", fontSize: 11, fontWeight: 700 } }, kpi.total, " \u0E04\u0E31\u0E19")),
+      /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 12 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 11, color: "#64748b", marginBottom: 4 } }, /* @__PURE__ */ React.createElement("span", null, "\u0E42\u0E2B\u0E25\u0E14\u0E40\u0E2A\u0E23\u0E47\u0E08"), /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 700, color: c } }, pctDone, "%")), /* @__PURE__ */ React.createElement("div", { style: { height: 6, background: "#f1f5f9", borderRadius: 6 } }, /* @__PURE__ */ React.createElement("div", { style: { height: 6, background: c, borderRadius: 6, width: `${pctDone}%`, transition: "width .5s" } }))),
+      /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6, marginBottom: 12 } }, [
+        ["\u2705", "\u0E08\u0E1A\u0E41\u0E25\u0E49\u0E27", kpi.completed, "#16a34a"],
+        ["\u{1F504}", "\u0E01\u0E33\u0E25\u0E31\u0E07\u0E17\u0E33", kpi.inProgress, "#d97706"],
+        ["\u23F1", "\u0E42\u0E2B\u0E25\u0E14\u0E40\u0E09\u0E25\u0E35\u0E48\u0E22", fmtMin(kpi.avgLoad), "#2563eb"]
+      ].map(([ico, lbl, val, sc]) => /* @__PURE__ */ React.createElement("div", { key: lbl, style: { background: "#f8fafc", borderRadius: 8, padding: "8px 6px", textAlign: "center" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 14 } }, ico), /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 800, fontSize: 13, color: sc } }, val), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 10, color: "#94a3b8" } }, lbl)))),
+      /* @__PURE__ */ React.createElement("div", { style: { background: `${c}0d`, borderRadius: 8, padding: "7px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: "#475569" } }, "\u{1F69B} \u0E23\u0E2D\u0E1A\u0E23\u0E27\u0E21\u0E40\u0E09\u0E25\u0E35\u0E48\u0E22"), /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 800, fontSize: 13, color: c } }, fmtMin(kpi.avgTurn))),
+      /* @__PURE__ */ React.createElement("div", { style: { marginTop: 10, textAlign: "right", fontSize: 11, color: "#94a3b8" } }, "\u0E01\u0E14\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E14\u0E39\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14 \u2192")
+    );
+  })), /* @__PURE__ */ React.createElement("div", { style: __spreadProps(__spreadValues({}, S.card), { margin: "16px 0 0" }) }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 700, fontSize: 14, color: "#1e293b", marginBottom: 12 } }, "\u{1F947} Leaderboard \u2014 \u0E08\u0E33\u0E19\u0E27\u0E19\u0E04\u0E31\u0E19\u0E17\u0E35\u0E48\u0E42\u0E2B\u0E25\u0E14\u0E40\u0E2A\u0E23\u0E47\u0E08"), allUsers.map((u) => getUserKPI(u)).sort((a, b) => b.completed - a.completed).map((kpi, i) => {
+    const medals = ["\u{1F947}", "\u{1F948}", "\u{1F949}"];
+    const max = getUserKPI(allUsers[0]).total || 1;
+    const best = Math.max(...allUsers.map((u) => getUserKPI(u).completed));
+    return /* @__PURE__ */ React.createElement("div", { key: kpi.user, style: { marginBottom: 10, cursor: "pointer" }, onClick: () => setKpiUser(kpi.user) }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 16 } }, medals[i] || `${i + 1}.`), /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 700, fontSize: 13, color: "#1e293b" } }, kpi.user)), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: "#64748b" } }, kpi.completed, " / ", kpi.total, " \u0E04\u0E31\u0E19 \xB7 ", fmtMin(kpi.avgLoad))), /* @__PURE__ */ React.createElement("div", { style: { height: 8, background: "#f1f5f9", borderRadius: 8 } }, /* @__PURE__ */ React.createElement("div", { style: { height: 8, background: `linear-gradient(90deg,#2563eb,#7c3aed)`, borderRadius: 8, width: `${best ? Math.round(kpi.completed / best * 100) : 0}%`, transition: "width .5s" } })));
+  })))), /* @__PURE__ */ React.createElement("div", { style: S.note }, "\u{1F4A1} ", /* @__PURE__ */ React.createElement("strong", null, "\u0E2B\u0E19\u0E49\u0E32 \u{1F6AA} \u0E1B\u0E23\u0E30\u0E15\u0E39\u0E42\u0E2B\u0E25\u0E14:"), " \u0E01\u0E14\u0E17\u0E35\u0E48\u0E1B\u0E23\u0E30\u0E15\u0E39\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E16\u0E40\u0E02\u0E49\u0E32/\u0E41\u0E01\u0E49\u0E44\u0E02\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22 \xB7 \u2699\uFE0F \u0E08\u0E31\u0E14\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E15\u0E39\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E2B\u0E23\u0E37\u0E2D\u0E25\u0E1A\u0E1B\u0E23\u0E30\u0E15\u0E39 \xB7 Export Excel \u0E44\u0E14\u0E49\u0E17\u0E38\u0E01\u0E40\u0E21\u0E37\u0E48\u0E2D"));
+}
+const S = {
+  page: { fontFamily: "'Sarabun','Noto Sans Thai',sans-serif", background: "#f0f4f8", minHeight: "100vh", paddingBottom: 40 },
+  header: { background: "linear-gradient(135deg,#1e3a5f 0%,#2563eb 100%)", color: "#fff", padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, boxShadow: "0 2px 12px rgba(37,99,235,.2)" },
+  hTitle: { fontSize: 19, fontWeight: 800, letterSpacing: 0.5 },
+  hSub: { fontSize: 11, opacity: 0.8, marginTop: 2 },
+  tabBar: { display: "flex", gap: 2, padding: "10px 14px 0", background: "#fff", borderBottom: "1px solid #e2e8f0" },
+  tab: { padding: "8px 16px", borderRadius: "8px 8px 0 0", border: "none", background: "transparent", color: "#64748b", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" },
+  tabActive: { background: "#1e3a5f", color: "#fff" },
+  alertBar: { background: "#fef3c7", borderBottom: "2px solid #fcd34d", padding: "9px 20px", fontSize: 13, color: "#92400e", display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" },
+  alertChip: { background: "#fcd34d", color: "#78350f", borderRadius: 12, padding: "2px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer", border: "1px solid #f59e0b" },
+  card: { background: "#fff", borderRadius: 12, margin: "14px 14px 0", padding: "16px 16px 12px", boxShadow: "0 2px 12px rgba(0,0,0,.07)", border: "1px solid #e2e8f0" },
+  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(185px,1fr))", gap: "0 14px" },
+  label: { display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 3, letterSpacing: 0.3 },
+  input: { width: "100%", padding: "8px 10px", borderRadius: 7, border: "1.5px solid #cbd5e1", fontSize: 13, color: "#1e293b", marginBottom: 10, boxSizing: "border-box", outline: "none", background: "#f8fafc", fontFamily: "inherit" },
+  stampBtn: { padding: "7px 9px", borderRadius: 7, border: "1.5px solid #3b82f6", background: "#eff6ff", color: "#2563eb", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", fontFamily: "inherit" },
+  btnPrimary: { padding: "8px 16px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#2563eb,#1d4ed8)", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 2px 8px rgba(37,99,235,.2)" },
+  btnSec: { padding: "7px 13px", borderRadius: 8, border: "1.5px solid rgba(255,255,255,.5)", background: "rgba(255,255,255,.12)", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" },
+  btnCancel: { padding: "8px 14px", borderRadius: 8, border: "1.5px solid #cbd5e1", background: "#fff", color: "#64748b", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" },
+  btnDanger: { padding: "9px 16px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#dc2626,#b91c1c)", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" },
+  btnDangerSm: { padding: "5px 11px", borderRadius: 7, border: "1.5px solid #fca5a5", background: "#fff1f1", color: "#dc2626", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" },
+  userBtn: { padding: "6px 12px", borderRadius: 8, border: "1.5px solid rgba(255,255,255,.4)", background: "rgba(255,255,255,.15)", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" },
+  filterBar: { display: "flex", gap: 8, padding: "12px 14px 0", alignItems: "center", flexWrap: "wrap" },
+  countBadge: { background: "#2563eb", color: "#fff", borderRadius: 20, padding: "4px 12px", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" },
+  tableWrap: { margin: "12px 14px 0", borderRadius: 12, overflow: "auto", boxShadow: "0 2px 12px rgba(0,0,0,.07)", border: "1px solid #e2e8f0", background: "#fff" },
+  table: { width: "100%", borderCollapse: "collapse", fontSize: 13 },
+  th: { color: "#e2e8f0", padding: "9px 10px", textAlign: "left", fontWeight: 700, fontSize: 11, letterSpacing: 0.5, whiteSpace: "nowrap" },
+  tr: { borderBottom: "1px solid #f1f5f9" },
+  td: { padding: "8px 10px", verticalAlign: "middle", whiteSpace: "nowrap" },
+  iconBtn: { background: "none", border: "none", cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 5 },
+  histBtn: { background: "none", border: "none", cursor: "pointer", color: "#4338ca", fontSize: 12, fontWeight: 700, padding: "2px 4px", fontFamily: "inherit" },
+  histDrop: { position: "absolute", right: 0, top: "100%", zIndex: 200, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,.12)", padding: "12px 14px", minWidth: 220, maxHeight: 260, overflowY: "auto" },
+  empty: { textAlign: "center", padding: "50px 20px", color: "#94a3b8", fontSize: 14 },
+  toast: { position: "fixed", top: 14, left: "50%", transform: "translateX(-50%)", background: "#1e293b", color: "#fff", padding: "9px 22px", borderRadius: 20, fontSize: 13, fontWeight: 600, zIndex: 9999, boxShadow: "0 4px 20px rgba(0,0,0,.25)", fontFamily: "inherit", whiteSpace: "nowrap" },
+  overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" },
+  modal: { background: "#fff", borderRadius: 16, padding: "24px 22px", width: "min(92vw,400px)", boxShadow: "0 20px 60px rgba(0,0,0,.2)" },
+  dateChip: { padding: "5px 12px", borderRadius: 20, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" },
+  dateChipActive: { background: "#1e3a5f", color: "#fff", border: "1.5px solid #1e3a5f" },
+  note: { margin: "14px 14px 0", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "10px 14px", fontSize: 12, color: "#1e40af", lineHeight: 1.6 }
+};
+
+  const root = ReactDOM.createRoot(document.getElementById("root"));
+  root.render(React.createElement(App));
+  </script>
+</body>
+</html>
